@@ -3,7 +3,7 @@ package app
 import (
 	"net/http"
 	"time"
-
+	
 	"nms_lte/internal/httpapi"
 	"nms_lte/internal/service/cm"
 	"nms_lte/internal/service/fault"
@@ -11,10 +11,19 @@ import (
 	"nms_lte/internal/service/ne"
 	"nms_lte/internal/service/pm"
 	"nms_lte/internal/store/memory"
+	// "nms_lte/internal/store/postgres"
 )
 
 func NewHTTPServer(port string) *http.Server {
 	store := memory.New()
+
+	//postgres sql
+
+	//connStr := "postgres://nms_user:nms_password@localhost:5432/nms_lte?sslmode=disable"
+	// store, err := postgres.New(connStr)
+	// if err != nil {
+	// 	log.Fatalf("failed to connect to postgres: %v", err)
+	// }
 
 	neService := ne.NewService(store)
 	inventoryService := inventory.NewService(store)

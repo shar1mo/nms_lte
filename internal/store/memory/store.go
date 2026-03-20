@@ -36,6 +36,7 @@ func (s *Store) GetNE(id string) (model.NetworkElement, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	ne, ok := s.nes[id]
+	//ok check exist in map
 	return ne, ok
 }
 
