@@ -3,47 +3,37 @@ package main
 import (
 	"fmt"
 	"log"
+
 	"nms_lte/internal/infra/netconf"
 )
 
 func main() {
+	if err := netconf.Init(); err != nil {
+		log.Fatalf("Failed to initialize NETCONF client: %v", err)
+	}
+	defer netconf.Destroy()
+
 	c, err := netconf.ConnectSSH(
 		"127.0.0.1",
 		10000,
 		"admin",
 		"admin",
-		"/home/nqs/nms_rc/third_party/libnetconf2/modules",
+		"../nms_rc/third_party/libnetconf2/modules",
 	)
 	if err != nil {
 		log.Fatalf("Failed to connect to NETCONF server: %v", err)
 	}
-	defer netconf.Destroy()
+	defer c.Close()
 
-	// reply, err := netconf.Rpc(c, 8, "<interfaces xmlns=\"urn:ietf:params:xml:ns:yang:ietf-interfaces\"/>")
-	reply, err := netconf.Rpc(c, 2, "<interfaces xmlns=\"urn:ietf:params:xml:ns:yang:ietf-interfaces\"/>")
+	reply, err := c.Get("")
 	if err != nil {
 		log.Fatalf("RPC failed: %v", err)
 	}
 
-	fmt.Println(reply)
+	res, err := netconf.StringToXml(reply)
+	if err != nil {
+		log.Fatalf("Failed to parse XML: %v", err)
+	}
 
-	c.Close()
+	fmt.Printf("%+v\n", res)
 }
-
-/*
-Connection established
-Received RPC:
-  get-schema
-  identifier = "ietf-datastores"
-  format = "ietf-netconf-monitoring:yang"
-Received RPC:
-  get
-  filter = "(null)"
-    type = "xpath"
-    select = "/ietf-yang-library:*"
-Received RPC:
-  get-config
-  running = ""
-Received RPC:
-  close-session
-*/

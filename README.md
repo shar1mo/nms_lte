@@ -45,6 +45,41 @@ go run ./cmd/nms-lte
 PORT=9090 go run ./cmd/nms-lte
 ```
 
+## Зависимости
+
+```bash
+sudo apt install -y \
+  libssl-dev \
+  libssh-dev \
+  libcurl4-openssl-dev \
+  pkg-config
+```
+
+## Сборка библиотек
+
+```bash
+make bootstrap 
+```
+
+## Сборка и запуск netconf клиента
+
+```bash
+make build-netconf-cli 
+```
+
+Для проверки netconf клиента необходимо запустить netconf сервер
+
+```bash
+cd .build/libnetconf2/examples
+./server
+```
+
+Запуск netconf клиента в другом терминале
+
+```bash
+./netconf-client
+```
+
 ## Быстрые примеры API
 
 Создать узел:

@@ -4,45 +4,46 @@ package netconf
 #cgo CFLAGS: -I${SRCDIR}
 #cgo CFLAGS: -I${SRCDIR}/../../../.local/include
 #cgo LDFLAGS: -L${SRCDIR}/../../../.local/lib -lnetconf2 -lyang
+#include <stdlib.h>
 #include "shim.h"
 */
 import "C"
 
 import (
-	"fmt"
+	"errors"
 	"unsafe"
 )
 
-type client struct {
+var (
+	errNilClient   = errors.New("nil client")
+	errNetconfCall = errors.New("netconf call failed")
+)
+
+type Client struct {
 	ptr *C.ncgo_client_t
 }
 
-//go:uintptrescapes
-//go:noinline
 func Init() error {
 	if rc := C.ncgo_client_init(); rc != 0 {
-		return fmt.Errorf("ncgo_client_init failed")
+		return errors.New("ncgo_client_init failed")
 	}
+
 	return nil
 }
 
-//go:uintptrescapes
-//go:noinline
 func Destroy() {
 	C.ncgo_client_destroy()
 }
 
-//go:uintptrescapes
-//go:noinline
-func ConnectSSH(host string, port uint16, user, pass, schemaPath string) (*client, error) {
-	cHost := C.CString(host)
-	cUser := C.CString(user)
-	cPass := C.CString(pass)
-	cSchema := C.CString(schemaPath)
-	defer C.free(unsafe.Pointer(cHost))
-	defer C.free(unsafe.Pointer(cUser))
-	defer C.free(unsafe.Pointer(cPass))
-	defer C.free(unsafe.Pointer(cSchema))
+func ConnectSSH(host string, port uint16, user, pass, schemaPath string) (*Client, error) {
+	cHost := CString(host)
+	cUser := CString(user)
+	cPass := CString(pass)
+	cSchema := CString(schemaPath)
+	defer freeCString(cHost)
+	defer freeCString(cUser)
+	defer freeCString(cPass)
+	defer freeCString(cSchema)
 
 	var cClient *C.ncgo_client_t
 	var cErr *C.char
@@ -57,42 +58,77 @@ func ConnectSSH(host string, port uint16, user, pass, schemaPath string) (*clien
 		&cErr,
 	)
 	if rc != 0 {
-		defer C.ncgo_string_free(cErr)
-		return nil, fmt.Errorf(C.GoString(cErr))
+		return nil, cgoError(cErr)
 	}
 
-	return &client{ptr: cClient}, nil
+	return &Client{ptr: cClient}, nil
 }
 
-//go:uintptrescapes
-//go:noinline
-func Rpc(c *client, rpcType int, rpcContent string) (string, error) {
-	cRpcContent := C.CString(rpcContent)
-	defer C.free(unsafe.Pointer(cRpcContent))
+func (c *Client) Rpc(rpcType int, rpcContent string) ([]byte, error) {
+	cContent := CString(rpcContent)
+	defer freeCString(cContent)
 
-	cType := C.NC_RPC_TYPE(rpcType)
+	return c.call(func(reply **C.char, callErr **C.char) C.int {
+		return C.ncgo_rpc(
+			c.ptr,
+			C.NC_RPC_TYPE(rpcType),
+			cContent,
+			reply,
+			callErr,
+		)
+	})
+}
+
+func (c *Client) Close() {
+	if c == nil || c.ptr == nil {
+		return
+	}
+
+	C.ncgo_close(c.ptr)
+	c.ptr = nil
+}
+
+func CString(value string) *C.char {
+	if value == "" {
+		return nil
+	}
+
+	return C.CString(value)
+}
+
+func freeCString(value *C.char) {
+	if value != nil {
+		C.free(unsafe.Pointer(value))
+	}
+}
+
+func cgoError(cErr *C.char) error {
+	if cErr == nil {
+		return errNetconfCall
+	}
+
+	defer C.ncgo_string_free(cErr)
+	return errors.New(C.GoString(cErr))
+}
+
+func (c *Client) call(fn func(reply **C.char, callErr **C.char) C.int) ([]byte, error) {
+	if c == nil || c.ptr == nil {
+		return nil, errNilClient
+	}
 
 	var cReply *C.char
 	var cErr *C.char
 
-	rc := C.ncgo_rpc(
-		c.ptr,
-		cType,
-		cRpcContent,
-		&cReply,
-		&cErr,
-	)
-	if rc != 0 {
-		defer C.ncgo_string_free(cErr)
-		return "", fmt.Errorf(C.GoString(cErr))
+	if rc := fn(&cReply, &cErr); rc != 0 {
+		return nil, cgoError(cErr)
 	}
 
-	reply := C.GoString(cReply)
+	if cReply == nil {
+		return nil, nil
+	}
+
+	reply := []byte(C.GoString(cReply))
 	C.ncgo_string_free(cReply)
 
 	return reply, nil
-}
-
-func (c *client) Close() {
-	// C.ncgo_client_close(c.ptr)
 }

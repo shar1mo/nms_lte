@@ -17,7 +17,12 @@ LIBNETCONF2_BUILD   := $(BUILD_DIR)/libnetconf2
 
 CMAKE               := cmake
 GIT                 := git
-BUILD_TYPE          ?= Debug
+BUILD_TYPE          ?= Release
+
+GO 					:= go
+GOENV				:= CGO_ENABLED=1 CGO_LDFLAGS="-L$(PWD)/.local/lib -Wl,-rpath,$(CURDIR)/.local/lib"
+
+
 
 COMMON_CMAKE_FLAGS := \
 	-DCMAKE_BUILD_TYPE=$(BUILD_TYPE) \
@@ -33,6 +38,9 @@ LIBNETCONF2_CMAKE_FLAGS := \
 	-DENABLE_DNSSEC=OFF
 
 all: libnetconf2 libyang
+
+build-netconf-cli: all
+	$(GOENV) $(GO) build -o netconf-client ./cmd/netconf-client
 
 deps:
 	@mkdir -p "$(THIRD_PARTY_DIR)" "$(BUILD_DIR)" "$(PREFIX_DIR)"
