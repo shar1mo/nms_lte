@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -85,6 +86,22 @@ func (h *Handler) handleNEDetails(w http.ResponseWriter, r *http.Request) {
 	}
 
 	neID := segments[0]
+
+	// DELETE /api/v1/ne/{id}
+	if r.Method == http.MethodDelete && len(segments) == 1 {
+		if err := h.neService.UnRegister(neID); err != nil {
+			if errors.Is(err, ne.ErrNENotFound) {
+				writeError(w, http.StatusNotFound, err.Error())
+				return
+			}
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// GET /api/v1/ne/{id}
 	if len(segments) == 1 {
 		if r.Method != http.MethodGet {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")

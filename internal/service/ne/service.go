@@ -10,6 +10,8 @@ import (
 	"nms_lte/internal/store/memory"
 )
 
+var ErrNENotFound = errors.New("ne doesn't exist")
+
 type Service struct {
 	store *memory.Store
 }
@@ -44,6 +46,27 @@ func (s *Service) Register(name, address, vendor string, capabilities []string) 
 	}
 	s.store.SaveNE(ne)
 	return ne, nil
+}
+
+func (s *Service) UnRegister(id string) error {
+	if strings.TrimSpace(id) == "" {
+		return errors.New("id is required")
+	}
+
+	ne, ok := s.store.GetNE(id)
+	if !ok {
+		return ErrNENotFound
+	}
+
+	if ne.Status == "active" {
+		return errors.New("status is active, deactivate ne first")
+	}
+
+	if !s.store.DeleteNE(ne.ID) {
+		return errors.New("failed to delete ne")
+	}
+
+	return nil
 }
 
 func (s *Service) List() []model.NetworkElement {

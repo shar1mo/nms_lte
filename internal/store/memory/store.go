@@ -53,6 +53,17 @@ func (s *Store) ListNE() []model.NetworkElement {
 	return out
 }
 
+func (s *Store) DeleteNE(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	if _, ok := s.nes[id]; ok {
+		delete(s.nes, id)
+		return true
+	}
+	return false
+}
+
 func (s *Store) SaveInventorySnapshot(snapshot model.InventorySnapshot) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
