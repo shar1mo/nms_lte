@@ -22,6 +22,10 @@ type Handler struct {
 	pmService        *pm.Service
 }
 
+type HandlerNE struct {
+	neService *ne.ServicePG
+}
+
 func NewHandler(
 	neService *ne.Service,
 	inventoryService *inventory.Service,
@@ -46,6 +50,117 @@ func NewHandler(
 	mux.HandleFunc("/api/v1/pm/samples", h.handlePMSamples)
 
 	return mux
+}
+
+func NewHandlerNE(neService *ne.ServicePG) http.Handler {
+	h := &HandlerNE{
+		neService: neService,
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", h.handleHealth)
+	mux.HandleFunc("/api/v1/ne", h.handleNECollection)
+	mux.HandleFunc("/api/v1/ne/", h.handleNEDetails)
+
+	return mux
+}
+
+func (h *HandlerNE) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *HandlerNE) handleNECollection(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		list, err := h.neService.ListPG()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, list)
+	case http.MethodPost:
+		var req struct {
+			Name         string   `json:"name"`
+			Address      string   `json:"address"`
+			Vendor       string   `json:"vendor"`
+			Capabilities []string `json:"capabilities"`
+		}
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		// POST /api/v1/ne
+		neItem, err := h.neService.RegisterPG(req.Name, req.Address, req.Vendor, req.Capabilities)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusCreated, neItem)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (h *HandlerNE) handleNEDetails(w http.ResponseWriter, r *http.Request) {
+	segments := splitNESubPath(r.URL.Path)
+	if len(segments) == 0 {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+
+	neID := segments[0]
+
+	// GET /api/v1/ne/{id}
+	if len(segments) == 1 && r.Method == http.MethodGet {
+		item, ok := h.neService.GetPG(neID)
+		if !ok {
+			writeError(w, http.StatusNotFound, "network element not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, item)
+		return
+	}
+
+	// DELETE /api/v1/ne/{id}
+	if len(segments) == 1 && r.Method == http.MethodDelete {
+		if err := h.neService.UnRegisterPG(neID); err != nil {
+			if errors.Is(err, ne.ErrNENotFound) {
+				writeError(w, http.StatusNotFound, err.Error())
+				return
+			}
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	writeError(w, http.StatusNotFound, "not found")
+}
+
+func splitNESubPathPG(path string) []string {
+	base := strings.TrimPrefix(path, "/api/v1/ne/")
+	base = strings.Trim(base, "/")
+	if base == "" {
+		return nil
+	}
+	return strings.Split(base, "/")
+}
+
+func decodeJSONPG(r *http.Request, dst any) error {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	return decoder.Decode(dst)
+}
+
+func writeJSONPG(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func writeErrorPG(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, map[string]string{"error": message})
 }
 
 func (h *Handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
