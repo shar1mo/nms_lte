@@ -19,7 +19,10 @@ func main() {
 		port = "8080"
 	}
 
-	srv := app.NewHTTPServer(port)
+	srv, err := app.NewHTTPServer(port)
+	if err != nil {
+		log.Fatalf("startup error: %v", err)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -34,7 +37,7 @@ func main() {
 	}()
 
 	log.Printf("nms-lte started on :%s", port)
-	err := srv.ListenAndServe()
+	err = srv.ListenAndServe()
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("server error: %v", err)
 	}

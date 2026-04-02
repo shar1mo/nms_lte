@@ -6,62 +6,58 @@ import (
 	"time"
 
 	"nms_lte/internal/id"
+	"nms_lte/internal/infra/netconf"
 	"nms_lte/internal/model"
-	"nms_lte/internal/store/memory"
 )
 
-type Service struct {
-	store *memory.Store
+type Store interface {
+	GetNE(id string) (model.NetworkElement, bool)
+	SaveInventorySnapshot(snapshot model.InventorySnapshot)
+	GetLatestInventorySnapshot(neID string) (model.InventorySnapshot, bool)
 }
 
-func NewService(store *memory.Store) *Service {
-	return &Service{store: store}
+type RPCProvider interface {
+	WithRPCClient(neID string, fn func(netconf.RPCClient) error) error
+}
+
+type Service struct {
+	store       Store
+	rpcProvider RPCProvider
+}
+
+func NewService(store Store, rpcProvider RPCProvider) *Service {
+	return &Service{
+		store:       store,
+		rpcProvider: rpcProvider,
+	}
 }
 
 func (s *Service) Sync(neID string) (model.InventorySnapshot, error) {
-	ne, ok := s.store.GetNE(neID)
+	neItem, ok := s.store.GetNE(neID)
 	if !ok {
 		return model.InventorySnapshot{}, errors.New("network element not found")
 	}
+	if s.rpcProvider == nil {
+		return model.InventorySnapshot{}, errors.New("inventory reader is not configured")
+	}
 
-	now := time.Now().UTC()
-	objects := []model.InventoryObject{
-		{
-			DN:    fmt.Sprintf("SubNetwork=LTE,ManagedElement=%s", ne.ID),
-			Class: "ManagedElement",
-			Attributes: map[string]string{
-				"name":   ne.Name,
-				"vendor": ne.Vendor,
-			},
-		},
-		{
-			DN:    fmt.Sprintf("SubNetwork=LTE,ManagedElement=%s,ENBFunction=1", ne.ID),
-			Class: "ENBFunction",
-			Attributes: map[string]string{
-				"status": ne.Status,
-			},
-		},
-		{
-			DN:    fmt.Sprintf("SubNetwork=LTE,ManagedElement=%s,ENBFunction=1,EUtranCellFDD=cell-1", ne.ID),
-			Class: "EUtranCellFDD",
-			Attributes: map[string]string{
-				"pci":      "100",
-				"earfcnDL": "300",
-			},
-		},
-		{
-			DN:    fmt.Sprintf("SubNetwork=LTE,ManagedElement=%s,ENBFunction=1,EUtranFrequency=1", ne.ID),
-			Class: "EUtranFrequency",
-			Attributes: map[string]string{
-				"earfcn": "300",
-			},
-		},
+	configReply, stateReply, err := s.readInventoryData(neID)
+	if err != nil {
+		return model.InventorySnapshot{}, err
+	}
+
+	objects, err := buildInventoryObjects(configReply, stateReply)
+	if err != nil {
+		return model.InventorySnapshot{}, err
+	}
+	if err := validateInventoryObjects(objects); err != nil {
+		return model.InventorySnapshot{}, err
 	}
 
 	snapshot := model.InventorySnapshot{
 		ID:       id.New("inv"),
-		NEID:     ne.ID,
-		SyncedAt: now,
+		NEID:     neItem.ID,
+		SyncedAt: time.Now().UTC(),
 		Objects:  objects,
 	}
 
@@ -71,4 +67,37 @@ func (s *Service) Sync(neID string) (model.InventorySnapshot, error) {
 
 func (s *Service) GetLatest(neID string) (model.InventorySnapshot, bool) {
 	return s.store.GetLatestInventorySnapshot(neID)
+}
+
+func (s *Service) readInventoryData(neID string) ([]byte, []byte, error) {
+	var configReply []byte
+	var stateReply []byte
+
+	err := s.rpcProvider.WithRPCClient(neID, func(client netconf.RPCClient) error {
+		reply, err := client.GetConfig(netconf.DatastoreRunning, "")
+		if err != nil {
+			return fmt.Errorf("read running config: %w", err)
+		}
+		configReply = append([]byte(nil), reply...)
+
+		reply, err = client.Get("")
+		if err != nil {
+			return fmt.Errorf("read operational data: %w", err)
+		}
+		stateReply = append([]byte(nil), reply...)
+
+		return nil
+	})
+	if err == nil {
+		return configReply, stateReply, nil
+	}
+
+	switch {
+	case netconf.IsTimeout(err):
+		return nil, nil, fmt.Errorf("inventory read timed out: %w", err)
+	case netconf.IsReadFailed(err):
+		return nil, nil, fmt.Errorf("inventory read failed: %w", err)
+	default:
+		return nil, nil, err
+	}
 }

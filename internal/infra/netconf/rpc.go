@@ -65,6 +65,28 @@ const (
 	DatastoreCandidate = "candidate"
 )
 
+type RPCClient interface {
+	Session
+	Get(filter string) ([]byte, error)
+	GetConfig(datastore, filter string) ([]byte, error)
+	Edit(datastore, editContent string) ([]byte, error)
+	Copy(target, urlTarget, source, urlOrConfigSource string) ([]byte, error)
+	Delete(target, url string) ([]byte, error)
+	Lock(datastore string) ([]byte, error)
+	Unlock(datastore string) ([]byte, error)
+	Commit() ([]byte, error)
+	Discard() ([]byte, error)
+	Cancel(persistID string) ([]byte, error)
+	Validate(source, urlOrConfig string) ([]byte, error)
+	GetSchema(identifier, version, format string) ([]byte, error)
+	Subscribe(streamName, filter, startTime, stopTime string) ([]byte, error)
+	GetData(datastore, filter string) ([]byte, error)
+	EditData(datastore, editContent string) ([]byte, error)
+	Kill(sessionID uint32) ([]byte, error)
+}
+
+var _ RPCClient = (*Client)(nil)
+
 func (c *Client) Get(filter string) ([]byte, error) {
 	cFilter := CString(filter)
 	defer freeCString(cFilter)

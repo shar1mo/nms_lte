@@ -45,6 +45,25 @@ go run ./cmd/nms-lte
 PORT=9090 go run ./cmd/nms-lte
 ```
 
+Для `NETCONF` подключения сервис читает переменные окружения:
+
+```bash
+NETCONF_USERNAME=admin
+NETCONF_PASSWORD=admin
+NETCONF_PORT=830
+NETCONF_RECONNECT_INTERVAL=5s
+NETCONF_SCHEMA_PATH=/path/to/yang/modules
+```
+
+Статусы узла в API:
+
+- `connecting` — идет первичное подключение;
+- `connected` — сессия активна, возможности узла считаны;
+- `disconnected` — подключение сейчас недоступно;
+- `reconnecting` — сервис восстанавливает сессию после обрыва.
+
+Поле `address` в API можно передавать как `host` или как `host:port`.
+
 ## Зависимости
 
 ```bash

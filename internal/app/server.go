@@ -13,11 +13,15 @@ import (
 	"nms_lte/internal/store/memory"
 )
 
-func NewHTTPServer(port string) *http.Server {
+func NewHTTPServer(port string) (*http.Server, error) {
 	store := memory.New()
 
-	neService := ne.NewService(store)
-	inventoryService := inventory.NewService(store)
+	neService, err := ne.NewManagedService(store)
+	if err != nil {
+		return nil, err
+	}
+
+	inventoryService := inventory.NewService(store, neService)
 	cmService := cm.NewService(store)
 	faultService := fault.NewService(store)
 	pmService := pm.NewService(store)
@@ -28,5 +32,5 @@ func NewHTTPServer(port string) *http.Server {
 		Addr:              ":" + port,
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
-	}
+	}, nil
 }

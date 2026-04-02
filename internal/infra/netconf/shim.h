@@ -28,6 +28,14 @@ int ncgo_connect_ssh(
     char **out_err
 );
 
+int ncgo_session_capabilities(
+    ncgo_client_t *client,
+    char **out_capabilities,
+    char **out_err
+);
+
+int ncgo_session_is_alive(ncgo_client_t *client);
+
 int ncgo_rpc(
     ncgo_client_t *client,
     NC_RPC_TYPE rpc_type,

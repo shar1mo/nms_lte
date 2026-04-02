@@ -196,6 +196,68 @@ int ncgo_connect_ssh(
     return 0;
 }
 
+int ncgo_session_capabilities(
+    ncgo_client_t *client,
+    char **out_capabilities,
+    char **out_err
+) {
+    const char * const *capabilities;
+    size_t total_len = 1;
+    int i;
+    char *joined;
+    char *cursor;
+
+    if (out_err) {
+        *out_err = NULL;
+    }
+    if (!out_capabilities) {
+        return ncgo_fail(out_err, "out_capabilities is required");
+    }
+
+    *out_capabilities = NULL;
+    if (!client || !client->sess) {
+        return ncgo_fail(out_err, "client is not connected");
+    }
+
+    capabilities = nc_session_get_cpblts(client->sess);
+    if (!capabilities) {
+        return 0;
+    }
+
+    for (i = 0; capabilities[i]; ++i) {
+        total_len += strlen(capabilities[i]) + 1;
+    }
+
+    joined = malloc(total_len);
+    if (!joined) {
+        return ncgo_fail(out_err, "malloc failed");
+    }
+
+    cursor = joined;
+    for (i = 0; capabilities[i]; ++i) {
+        size_t capability_len = strlen(capabilities[i]);
+        memcpy(cursor, capabilities[i], capability_len);
+        cursor += capability_len;
+        *cursor++ = '\n';
+    }
+
+    if (cursor != joined) {
+        cursor--;
+    }
+    *cursor = '\0';
+
+    *out_capabilities = joined;
+    return 0;
+}
+
+int ncgo_session_is_alive(ncgo_client_t *client) {
+    if (!client || !client->sess) {
+        return 0;
+    }
+
+    return nc_session_get_status(client->sess) == NC_STATUS_RUNNING;
+}
+
 int ncgo_rpc(
     ncgo_client_t *client,
     NC_RPC_TYPE rpc_type,
@@ -626,6 +688,10 @@ static int ncgo_exec_rpc(
     }
 
     msgtype = nc_send_rpc(client->sess, rpc, NCGO_SEND_TIMEOUT_MS, &msgid);
+    if (msgtype == NC_MSG_WOULDBLOCK) {
+        ncgo_fail(out_err, "nc_send_rpc timed out");
+        goto cleanup;
+    }
     if (msgtype != NC_MSG_RPC) {
         ncgo_fail_last(out_err, "nc_send_rpc failed");
         goto cleanup;
@@ -643,8 +709,16 @@ static int ncgo_exec_rpc(
         op = NULL;
     }
 
+    if (msgtype == NC_MSG_WOULDBLOCK) {
+        ncgo_fail(out_err, "nc_recv_reply timed out");
+        goto cleanup;
+    }
+    if (msgtype == NC_MSG_ERROR) {
+        ncgo_fail_last(out_err, "nc_recv_reply read failed");
+        goto cleanup;
+    }
     if (msgtype != NC_MSG_REPLY) {
-        ncgo_fail_last(out_err, "nc_recv_reply failed");
+        ncgo_fail(out_err, "nc_recv_reply returned unexpected message type");
         goto cleanup;
     }
 

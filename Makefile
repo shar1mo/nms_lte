@@ -45,6 +45,15 @@ build-netconf-cli: all
 deps:
 	@mkdir -p "$(THIRD_PARTY_DIR)" "$(BUILD_DIR)" "$(PREFIX_DIR)"
 
+test:
+	$(GOENV) $(GO) test -v ./...
+
+run-nms:
+	$(GOENV) $(GO) run ./cmd/nms-rc
+
+run-netconf:
+	$(GOENV) $(GO) run ./cmd/netconf-client
+
 bootstrap: clone libnetconf2 libyang
 
 clone: clone-libyang clone-libnetconf2

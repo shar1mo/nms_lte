@@ -108,7 +108,7 @@ func cgoError(cErr *C.char) error {
 	}
 
 	defer C.ncgo_string_free(cErr)
-	return errors.New(C.GoString(cErr))
+	return wrapNetconfError(C.GoString(cErr))
 }
 
 func (c *Client) call(fn func(reply **C.char, callErr **C.char) C.int) ([]byte, error) {
