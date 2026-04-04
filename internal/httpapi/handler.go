@@ -22,8 +22,9 @@ type Handler struct {
 	pmService        *pm.Service
 }
 
-type HandlerNE struct {
+type HandlerPG struct {
 	neService *ne.ServicePG
+	inventoryService *inventory.ServicePG
 }
 
 func NewHandler(
@@ -52,9 +53,10 @@ func NewHandler(
 	return mux
 }
 
-func NewHandlerNE(neService *ne.ServicePG) http.Handler {
-	h := &HandlerNE{
+func NewHandlerPG(neService *ne.ServicePG, inventoryService *inventory.ServicePG) http.Handler {
+	h := &HandlerPG{
 		neService: neService,
+		inventoryService: inventoryService,
 	}
 
 	mux := http.NewServeMux()
@@ -65,11 +67,11 @@ func NewHandlerNE(neService *ne.ServicePG) http.Handler {
 	return mux
 }
 
-func (h *HandlerNE) handleHealth(w http.ResponseWriter, _ *http.Request) {
+func (h *HandlerPG) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (h *HandlerNE) handleNECollection(w http.ResponseWriter, r *http.Request) {
+func (h *HandlerPG) handleNECollection(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		list, err := h.neService.ListPG()
@@ -101,7 +103,7 @@ func (h *HandlerNE) handleNECollection(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *HandlerNE) handleNEDetails(w http.ResponseWriter, r *http.Request) {
+func (h *HandlerPG) handleNEDetails(w http.ResponseWriter, r *http.Request) {
 	segments := splitNESubPath(r.URL.Path)
 	if len(segments) == 0 {
 		writeError(w, http.StatusNotFound, "not found")
@@ -135,32 +137,38 @@ func (h *HandlerNE) handleNEDetails(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeError(w, http.StatusNotFound, "not found")
-}
-
-func splitNESubPathPG(path string) []string {
-	base := strings.TrimPrefix(path, "/api/v1/ne/")
-	base = strings.Trim(base, "/")
-	if base == "" {
-		return nil
+	//inventory
+	//POST /api/v1/ne/{id}/inventory/sync
+	if len(segments) == 3 && segments[1] == "inventory" && segments[2] == "sync" {
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		snapshot, err := h.inventoryService.Sync(neID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, snapshot)
+		return
 	}
-	return strings.Split(base, "/")
-}
 
-func decodeJSONPG(r *http.Request, dst any) error {
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	return decoder.Decode(dst)
-}
+	//GET /api/v1/ne/{id}/inventory/latest
+	if len(segments) == 3 && segments[1] == "inventory" && segments[2] == "latest" {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		snapshot, err := h.inventoryService.GetLatestPG(neID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "inventory snapshot not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, snapshot)
+		return
+	}
 
-func writeJSONPG(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
-}
-
-func writeErrorPG(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"error": message})
+	writeError(w, http.StatusNotFound, "not found")
 }
 
 func (h *Handler) handleHealth(w http.ResponseWriter, _ *http.Request) {

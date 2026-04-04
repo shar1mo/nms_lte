@@ -8,7 +8,7 @@ import (
 	"nms_lte/internal/httpapi"
 	// "nms_lte/internal/service/cm"
 	// "nms_lte/internal/service/fault"
-	// "nms_lte/internal/service/inventory"
+	"nms_lte/internal/service/inventory"
 	"nms_lte/internal/service/ne"
 	// "nms_lte/internal/service/pm"
 	// "nms_lte/internal/store/memory"
@@ -48,8 +48,9 @@ func NewHTTPServer(port string) *http.Server {
 	}
 
 	neService := ne.NewServicePG(store)
+	inventoryService := inventory.NewServicePG(store)
 
-	handler := httpapi.NewHandlerNE(neService) // <- используем отдельный HandlerNE для Postgres
+	handler := httpapi.NewHandlerPG(neService, inventoryService) // <- используем отдельный HandlerNE для Postgres
 
 	return &http.Server{
 		Addr:              ":" + port,

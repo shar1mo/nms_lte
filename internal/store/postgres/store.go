@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+
 	"nms_lte/internal/model"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -131,4 +132,106 @@ func (s *Store) ListNE() ([]model.NetworkElement, error) {
 		out = append(out, ne)
 	}
 	return out, nil
+}
+
+func (s *Store) SaveInventorySnapshot(snapshot model.InventorySnapshot) error {
+	tx, err := s.db.Begin(context.Background())
+	if err != nil {
+		return err
+	}
+	defer func() {
+	_ = tx.Rollback(context.Background())
+	}()
+	
+	queryInvent := `
+	INSERT INTO inventory_snapshots (
+		id, ne_id, synced_at
+	) VALUES ($1, $2, $3)
+	ON CONFLICT (id) DO UPDATE
+	SET synced_at = EXCLUDED.synced_at
+	`
+
+	queryObj := `
+	INSERT INTO inventory_objects (
+		snapshot_id, dn, class, attributes
+	) VALUES ($1, $2, $3, $4)
+	`
+
+	_, err = tx.Exec(context.Background(),
+		queryInvent,
+		snapshot.ID,
+		snapshot.NEID,
+		snapshot.SyncedAt,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	for _, obj := range snapshot.Objects {
+		_, err := tx.Exec(context.Background(),
+		queryObj,
+		snapshot.ID,
+		obj.DN,
+		obj.Class,
+		obj.Attributes,
+	)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit(context.Background())
+}
+
+func (s *Store) GetLatestInventorySnapshot(neID string) (model.InventorySnapshot, error) {
+	query := `
+	SELECT id, ne_id, synced_at 
+	FROM inventory_snapshots
+	WHERE ne_id = $1
+	ORDER BY synced_at DESC 
+	LIMIT 1;
+	`
+
+	queryObj := `
+	SELECT dn, class, attributes
+	FROM inventory_objects
+	WHERE snapshot_id = $1;
+	`
+
+	var inventory model.InventorySnapshot
+	err := s.db.QueryRow(context.Background(), query, neID).Scan(
+		&inventory.ID,
+		&inventory.NEID,
+		&inventory.SyncedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.InventorySnapshot{}, nil
+		}
+		return model.InventorySnapshot{}, err
+	}
+
+	rows, err := s.db.Query(context.Background(), queryObj, inventory.ID)
+	if err != nil {
+		return model.InventorySnapshot{}, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var obj model.InventoryObject
+		var attrs map[string]string
+		err := rows.Scan(&obj.DN, &obj.Class, &attrs)
+		if err != nil {
+			return model.InventorySnapshot{}, err
+		}
+		obj.Attributes = attrs
+		inventory.Objects = append(inventory.Objects, obj)
+	}
+
+	if err := rows.Err(); err != nil {
+    return model.InventorySnapshot{}, err
+	}
+
+	return inventory, nil
 }
