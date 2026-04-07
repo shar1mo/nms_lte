@@ -7,19 +7,32 @@ import (
 
 	"nms_lte/internal/id"
 	"nms_lte/internal/model"
-	"nms_lte/internal/store/memory"
 )
 
-type Service struct {
-	store *memory.Store
+type Store interface {
+	GetNE(id string) (model.NetworkElement, bool, error)
+	SaveInventorySnapshot(snapshot model.InventorySnapshot) error
+	GetLatestInventorySnapshot(neID string) (model.InventorySnapshot, error)
+	SaveHeartbeat(hb model.HeartbeatStatus)
+	GetHeartbeat(neID string) (model.HeartbeatStatus, bool)
+	AddFaultEvent(event model.FaultEvent)
+	ListFaultEvents(neID string) []model.FaultEvent
 }
 
-func NewService(store *memory.Store) *Service {
+type Service struct {
+	store Store
+}
+
+func NewService(store Store) *Service {
 	return &Service{store: store}
 }
 
 func (s *Service) ReportEvent(neID, severity, message string) (model.FaultEvent, error) {
-	if _, ok := s.store.GetNE(neID); !ok {
+	_, ok, err := s.store.GetNE(neID)
+	if err != nil {
+		return model.FaultEvent{}, err
+	}
+	if !ok {
 		return model.FaultEvent{}, errors.New("network element not found")
 	}
 	if strings.TrimSpace(message) == "" {
@@ -40,7 +53,11 @@ func (s *Service) ReportEvent(neID, severity, message string) (model.FaultEvent,
 }
 
 func (s *Service) CheckHeartbeat(neID string, healthy bool) (model.HeartbeatStatus, error) {
-	if _, ok := s.store.GetNE(neID); !ok {
+	_, ok, err := s.store.GetNE(neID)
+	if err != nil {
+		return model.HeartbeatStatus{}, err
+	}
+	if !ok {
 		return model.HeartbeatStatus{}, errors.New("network element not found")
 	}
 	hb := model.HeartbeatStatus{

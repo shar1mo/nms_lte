@@ -162,9 +162,9 @@ func TestSyncReadsRunningConfigAndOperationalData(t *testing.T) {
 		"earfcnDL": "300",
 	})
 
-	latest, ok := service.GetLatest(neItem.ID)
-	if !ok {
-		t.Fatal("expected latest snapshot")
+	latest, err := service.GetLatest(neItem.ID)
+	if err != nil {
+		t.Fatalf("get latest snapshot: %v", err)
 	}
 	if latest.ID != snapshot.ID {
 		t.Fatalf("latest snapshot mismatch: %s != %s", latest.ID, snapshot.ID)

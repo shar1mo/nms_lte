@@ -10,11 +10,16 @@ import (
 	"nms_lte/internal/service/inventory"
 	"nms_lte/internal/service/ne"
 	"nms_lte/internal/service/pm"
-	"nms_lte/internal/store/memory"
+	"nms_lte/internal/store/postgres"
 )
 
 func NewHTTPServer(port string) (*http.Server, error) {
-	store := memory.New()
+	// store := memory.New()
+
+	store, err := postgres.New("")
+	if err != nil {
+		return nil, err
+	}
 
 	neService, err := ne.NewManagedService(store)
 	if err != nil {

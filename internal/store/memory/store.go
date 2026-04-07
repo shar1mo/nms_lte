@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"errors"
 	"sort"
 	"sync"
 
@@ -26,20 +27,21 @@ func New() *Store {
 	}
 }
 
-func (s *Store) SaveNE(ne model.NetworkElement) {
+func (s *Store) SaveNE(ne model.NetworkElement) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.nes[ne.ID] = ne
+	return nil
 }
 
-func (s *Store) GetNE(id string) (model.NetworkElement, bool) {
+func (s *Store) GetNE(id string) (model.NetworkElement, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	ne, ok := s.nes[id]
-	return ne, ok
+	return ne, ok, nil
 }
 
-func (s *Store) ListNE() []model.NetworkElement {
+func (s *Store) ListNE() ([]model.NetworkElement, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]model.NetworkElement, 0, len(s.nes))
@@ -49,26 +51,42 @@ func (s *Store) ListNE() []model.NetworkElement {
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].CreatedAt.Before(out[j].CreatedAt)
 	})
-	return out
+	return out, nil
 }
 
-func (s *Store) SaveInventorySnapshot(snapshot model.InventorySnapshot) {
+func (s *Store) DeleteNE(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.nes[id]; ok {
+		delete(s.nes, id)
+		return nil
+	}
+	return errors.New("not found")
+}
+
+func (s *Store) SaveInventorySnapshot(snapshot model.InventorySnapshot) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.inventorySnapshots[snapshot.NEID] = snapshot
+	return nil
 }
 
-func (s *Store) GetLatestInventorySnapshot(neID string) (model.InventorySnapshot, bool) {
+func (s *Store) GetLatestInventorySnapshot(neID string) (model.InventorySnapshot, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	snapshot, ok := s.inventorySnapshots[neID]
-	return snapshot, ok
+	if !ok {
+		return model.InventorySnapshot{}, errors.New("not found")
+	}
+	return snapshot, nil
 }
 
-func (s *Store) SaveCMRequest(req model.CMRequest) {
+func (s *Store) SaveCMRequest(req model.CMRequest) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cmRequests[req.ID] = req
+	return nil
 }
 
 func (s *Store) GetCMRequest(id string) (model.CMRequest, bool) {
@@ -78,7 +96,7 @@ func (s *Store) GetCMRequest(id string) (model.CMRequest, bool) {
 	return req, ok
 }
 
-func (s *Store) ListCMRequests() []model.CMRequest {
+func (s *Store) ListCMRequests() ([]model.CMRequest, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]model.CMRequest, 0, len(s.cmRequests))
@@ -88,7 +106,7 @@ func (s *Store) ListCMRequests() []model.CMRequest {
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].CreatedAt.Before(out[j].CreatedAt)
 	})
-	return out
+	return out, nil
 }
 
 func (s *Store) AddFaultEvent(event model.FaultEvent) {

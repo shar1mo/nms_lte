@@ -7,7 +7,6 @@ import (
 
 	"nms_lte/internal/id"
 	"nms_lte/internal/model"
-	"nms_lte/internal/store/memory"
 )
 
 type ApplyChangeInput struct {
@@ -17,15 +16,25 @@ type ApplyChangeInput struct {
 }
 
 type Service struct {
-	store *memory.Store
+	store Store
 }
 
-func NewService(store *memory.Store) *Service {
+type Store interface {
+	GetNE(id string) (model.NetworkElement, bool, error)
+	SaveCMRequest(req model.CMRequest) error
+	ListCMRequests() ([]model.CMRequest, error)
+}
+
+func NewService(store Store) *Service {
 	return &Service{store: store}
 }
 
 func (s *Service) ApplyChange(input ApplyChangeInput) (model.CMRequest, error) {
-	if _, ok := s.store.GetNE(input.NEID); !ok {
+	_, ok, err := s.store.GetNE(input.NEID)
+	if err != nil {
+		return model.CMRequest{}, err
+	}
+	if !ok {
 		return model.CMRequest{}, errors.New("network element not found")
 	}
 
@@ -62,7 +71,7 @@ func (s *Service) ApplyChange(input ApplyChangeInput) (model.CMRequest, error) {
 	return req, nil
 }
 
-func (s *Service) ListRequests() []model.CMRequest {
+func (s *Service) ListRequests() ([]model.CMRequest, error) {
 	return s.store.ListCMRequests()
 }
 

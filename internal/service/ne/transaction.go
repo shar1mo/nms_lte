@@ -13,9 +13,14 @@ import (
 )
 
 func (s *Service) ApplyTransaction(neID string, changes []model.InventoryObject) (err error) {
-	if _, ok := s.store.GetNE(neID); !ok {
+	_, ok, err := s.store.GetNE(neID)
+	if err != nil {
+		return err
+	}
+	if !ok {
 		return errors.New("network element not found")
 	}
+
 	if len(changes) == 0 {
 		return errors.New("changes are required")
 	}

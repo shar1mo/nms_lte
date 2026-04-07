@@ -8,15 +8,22 @@ import (
 
 	"nms_lte/internal/id"
 	"nms_lte/internal/model"
-	"nms_lte/internal/store/memory"
 )
 
+type Store interface {
+	GetNE(id string) (model.NetworkElement, bool, error)
+	SaveCMRequest(req model.CMRequest) error
+	ListCMRequests() ([]model.CMRequest, error)
+	AddPMSample(sample model.PMSample)
+	ListPMSamples(neID, metric string, limit int) []model.PMSample
+}
+
 type Service struct {
-	store *memory.Store
+	store Store
 	rnd   *rand.Rand
 }
 
-func NewService(store *memory.Store) *Service {
+func NewService(store Store) *Service {
 	return &Service{
 		store: store,
 		rnd:   rand.New(rand.NewSource(time.Now().UnixNano())),
@@ -24,7 +31,11 @@ func NewService(store *memory.Store) *Service {
 }
 
 func (s *Service) Collect(neID, metric string) (model.PMSample, error) {
-	if _, ok := s.store.GetNE(neID); !ok {
+	_, ok, err := s.store.GetNE(neID)
+	if err != nil {
+		return model.PMSample{}, err
+	}
+	if !ok {
 		return model.PMSample{}, errors.New("network element not found")
 	}
 	if strings.TrimSpace(metric) == "" {

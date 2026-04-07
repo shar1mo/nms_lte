@@ -10,6 +10,7 @@ import (
 	"nms_lte/internal/infra/netconf"
 	"nms_lte/internal/model"
 	"nms_lte/internal/store/memory"
+	"nms_lte/internal/store/postgres"
 )
 
 type fakeConnector struct {
@@ -246,7 +247,10 @@ func TestRegisterKeepsDisconnectedNodeAndReconnects(t *testing.T) {
 	waitForConnectCalls(t, connector, 2)
 	waitForNEStatus(t, service, neItem.ID, "connected")
 
-	updated, ok := service.Get(neItem.ID)
+	updated, ok, err := service.Get(neItem.ID)
+	if err != nil {
+		t.Fatalf("get ne: %v", err)
+	}
 	if !ok {
 		t.Fatal("expected network element")
 	}
@@ -402,14 +406,21 @@ func waitForNEStatus(t *testing.T, service *Service, neID, status string) {
 
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(deadline) {
-		item, ok := service.Get(neID)
+		item, ok, err := service.Get(neID)
+		if err != nil {
+			t.Fatalf("get ne: %v", err)
+		}
 		if ok && item.Status == status {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	item, _ := service.Get(neID)
+	item, _, err := service.Get(neID)
+	if err != nil {
+		t.Fatalf("get ne: %v", err)
+	}
+
 	t.Fatalf("timed out waiting for status %q, current status %q", status, item.Status)
 }
 
@@ -418,7 +429,10 @@ func waitForCapability(t *testing.T, service *Service, neID, capability string) 
 
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(deadline) {
-		item, ok := service.Get(neID)
+		item, ok, err := service.Get(neID)
+		if err != nil {
+			t.Fatalf("get ne: %v", err)
+		}
 		if !ok {
 			time.Sleep(10 * time.Millisecond)
 			continue
@@ -431,7 +445,10 @@ func waitForCapability(t *testing.T, service *Service, neID, capability string) 
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	item, _ := service.Get(neID)
+	item, _, err := service.Get(neID)
+	if err != nil {
+		t.Fatalf("get ne: %v", err)
+	}
 	t.Fatalf("timed out waiting for capability %q, current capabilities %#v", capability, item.Capabilities)
 }
 
@@ -459,4 +476,160 @@ func equalStrings(left, right []string) bool {
 		}
 	}
 	return true
+}
+
+func TestNERegisterValidation(t *testing.T) {
+	//in-memory
+	memStore := memory.New()
+	memService := NewService(memStore)
+
+	_, err := memService.Register("enb-1", "10.0.0.1", "vendor-a", nil)
+	if err != nil {
+		t.Fatalf("memory register ne: %v", err)
+	}
+
+	_, err = memService.Register("", "10.0.0.1", "vendor-a", nil)
+	if err == nil || err.Error() != "name is required" {
+		t.Fatalf("expected 'name is required', got %s", err)
+	}
+
+	_, err = memService.Register("enb-1", "", "vendor-a", nil)
+	if err == nil || err.Error() != "address is required" {
+		t.Fatalf("expected 'address is required', got %s", err)
+	}
+
+	//postgres
+	pgStore, err := postgres.New(postgres.ConnString)
+	if err != nil {
+		t.Fatalf("create postgres store: %v", err)
+	}
+	pgService := NewService(pgStore)
+
+	_, err = pgService.RegisterPG("enb-1", "10.0.0.1", "vendor-a", nil)
+	if err != nil {
+		t.Fatalf("postgres register ne: %v", err)
+	}
+
+	_, err = pgService.RegisterPG("", "10.0.0.1", "vendor-a", nil)
+	if err == nil || err.Error() != "name is required" {
+		t.Fatalf("expected 'name is required' (PG), got %s", err)
+	}
+
+	_, err = pgService.RegisterPG("enb-1", "", "vendor-a", nil)
+	if err == nil || err.Error() != "address is required" {
+		t.Fatalf("expected 'address is required' (PG), got %s", err)
+	}
+}
+
+func TestTrimSpace(t *testing.T) {
+	//in-memory
+	memStore := memory.New()
+	memService := NewService(memStore)
+
+	neItem, err := memService.Register("  enb-2  ", "  10.0.0.2  ", " vendor-b ", nil)
+	if err != nil {
+		t.Fatalf("memory register ne: %v", err)
+	}
+
+	if neItem.Name != "enb-2" {
+		t.Fatalf("expected trimmed name, got '%s'", neItem.Name)
+	}
+	if neItem.Address != "10.0.0.2" {
+		t.Fatalf("expected trimmed address, got '%s'", neItem.Address)
+	}
+	if neItem.Vendor != "vendor-b" {
+		t.Fatalf("expected trimmed vendor, got '%s'", neItem.Vendor)
+	}
+	if neItem.Status != "active" {
+		t.Fatalf("expected status 'active', got %s", neItem.Status)
+	}
+
+	//postgres
+	pgStore, err := postgres.New(postgres.ConnString)
+	if err != nil {
+		t.Fatalf("create postgres store: %v", err)
+	}
+	pgService := NewService(pgStore)
+
+	neItem, err = pgService.RegisterPG("  enb-2  ", "  10.0.0.2  ", " vendor-b ", nil)
+	if err != nil {
+		t.Fatalf("postgres register ne: %v", err)
+	}
+
+	if neItem.Name != "enb-2" {
+		t.Fatalf("expected trimmed name (PG), got '%s'", neItem.Name)
+	}
+	if neItem.Address != "10.0.0.2" {
+		t.Fatalf("expected trimmed address (PG), got '%s'", neItem.Address)
+	}
+	if neItem.Vendor != "vendor-b" {
+		t.Fatalf("expected trimmed vendor (PG), got '%s'", neItem.Vendor)
+	}
+	if neItem.Status != "active" {
+		t.Fatalf("expected status 'active' (PG), got %s", neItem.Status)
+	}
+}
+
+func TestGetListNE(t *testing.T) {
+	//in-memory
+	memStore := memory.New()
+	memService := NewService(memStore)
+
+	neItem, err := memService.Register("enb-1", "10.0.0.1", "vendor-a", nil)
+	if err != nil {
+		t.Fatalf("memory register ne: %v", err)
+	}
+
+	saved, ok, err := memService.Get(neItem.ID)
+	if err != nil {
+		t.Fatalf("get ne: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected NE to be saved (memory)")
+	}
+	if saved.ID != neItem.ID {
+		t.Fatalf("saved NE mismatch (memory)")
+	}
+
+	list, err := memService.List()
+	if err != nil {
+		t.Fatalf("list ne (memory): %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("expected 1 NE (memory), got %d", len(list))
+	}
+	if list[0].ID != neItem.ID {
+		t.Fatalf("unexpected NE in list (memory)")
+	}
+
+	//postgres
+	pgStore, err := postgres.New(postgres.ConnString)
+	if err != nil {
+		t.Fatalf("create postgres store: %v", err)
+	}
+	pgService := NewService(pgStore)
+
+	neItem, err = pgService.RegisterPG("enb-1", "10.0.0.1", "vendor-a", nil)
+	if err != nil {
+		t.Fatalf("postgres register ne: %v", err)
+	}
+
+	savedPG, ok := pgService.GetPG(neItem.ID)
+	if !ok {
+		t.Fatalf("expected NE to be saved (PG)")
+	}
+	if savedPG.ID != neItem.ID {
+		t.Fatalf("saved NE mismatch (PG)")
+	}
+
+	listPG, err := pgService.ListPG()
+	if err != nil {
+		t.Fatalf("list ne (PG): %v", err)
+	}
+	if len(listPG) != 1 {
+		t.Fatalf("expected 1 NE (PG), got %d", len(listPG))
+	}
+	if listPG[0].ID != neItem.ID {
+		t.Fatalf("unexpected NE in list (PG)")
+	}
 }

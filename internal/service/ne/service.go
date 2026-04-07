@@ -12,10 +12,13 @@ import (
 	"nms_lte/internal/model"
 )
 
+var ErrNENotFound = errors.New("ne doesn't exist")
+
 type Store interface {
-	SaveNE(ne model.NetworkElement)
-	GetNE(id string) (model.NetworkElement, bool)
-	ListNE() []model.NetworkElement
+	SaveNE(ne model.NetworkElement) error
+	GetNE(id string) (model.NetworkElement, bool, error)
+	DeleteNE(id string) error
+	ListNE() ([]model.NetworkElement, error)
 }
 
 type managedConn struct {
@@ -93,11 +96,35 @@ func (s *Service) Register(name, address, vendor string, capabilities []string) 
 	return ne, nil
 }
 
-func (s *Service) List() []model.NetworkElement {
+func (s *Service) UnRegister(id string) error {
+	if strings.TrimSpace(id) == "" {
+		return errors.New("id is required")
+	}
+
+	ne, ok, err := s.store.GetNE(id)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrNENotFound
+	}
+
+	if ne.Status == "active" {
+		return errors.New("status is active, deactivate ne first")
+	}
+
+	if err := s.store.DeleteNE(id); err != nil {
+		return errors.New("failed to delete ne")
+	}
+
+	return nil
+}
+
+func (s *Service) List() ([]model.NetworkElement, error) {
 	return s.store.ListNE()
 }
 
-func (s *Service) Get(neID string) (model.NetworkElement, bool) {
+func (s *Service) Get(neID string) (model.NetworkElement, bool, error) {
 	return s.store.GetNE(neID)
 }
 
@@ -141,8 +168,8 @@ func (s *Service) connectionLoop(neID string) {
 			return
 		}
 
-		ne, ok := s.store.GetNE(neID)
-		if !ok {
+		ne, ok, err := s.store.GetNE(neID)
+		if err != nil || !ok {
 			return
 		}
 
@@ -212,10 +239,13 @@ func (s *Service) waitReconnect() bool {
 	}
 }
 
-func (s *Service) updateConnectionState(neID, status string, capabilities []string) {
-	ne, ok := s.store.GetNE(neID)
+func (s *Service) updateConnectionState(neID, status string, capabilities []string) error {
+	ne, ok, err := s.store.GetNE(neID)
+	if err != nil {
+		return err
+	}
 	if !ok {
-		return
+		return ErrNENotFound
 	}
 
 	ne.Status = status
@@ -224,6 +254,8 @@ func (s *Service) updateConnectionState(neID, status string, capabilities []stri
 	}
 	ne.UpdatedAt = time.Now().UTC()
 	s.store.SaveNE(ne)
+
+	return nil
 }
 
 func (s *Service) setManagedConn(neID string, conn *managedConn) {
@@ -290,4 +322,76 @@ func (s *Service) closeManagedConns() {
 			client.Close()
 		}
 	}
+}
+
+// posgres methods
+func (s *Service) RegisterPG(name, address, vendor string, capabilities []string) (model.NetworkElement, error) {
+	if strings.TrimSpace(name) == "" {
+		return model.NetworkElement{}, errors.New("name is required")
+	}
+	if strings.TrimSpace(address) == "" {
+		return model.NetworkElement{}, errors.New("address is required")
+	}
+	if len(capabilities) == 0 {
+		capabilities = []string{
+			"urn:ietf:params:netconf:base:1.0",
+			"urn:ietf:params:netconf:base:1.1",
+		}
+	}
+	now := time.Now().UTC()
+	ne := model.NetworkElement{
+		ID:           id.New("ne"),
+		Name:         strings.TrimSpace(name),
+		Address:      strings.TrimSpace(address),
+		Vendor:       strings.TrimSpace(vendor),
+		Status:       "active",
+		Capabilities: capabilities,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if err := s.store.SaveNE(ne); err != nil {
+		return model.NetworkElement{}, err
+	}
+
+	return ne, nil
+}
+
+func (s *Service) UnRegisterPG(id string) error {
+	if strings.TrimSpace(id) == "" {
+		return errors.New("id is required")
+	}
+
+	ne, ok, err := s.store.GetNE(id)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrNENotFound
+	}
+
+	//if ne.Status == "active" {
+	//	return errors.New("status is active, deactivate ne first")
+	//}
+
+	if err := s.store.DeleteNE(ne.ID); err != nil {
+		return errors.New("failed to delete ne")
+	}
+
+	return nil
+}
+
+func (s *Service) ListPG() ([]model.NetworkElement, error) {
+	out, err := s.store.ListNE()
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *Service) GetPG(neID string) (model.NetworkElement, bool) {
+	ne, ok, err := s.store.GetNE(neID)
+	if err != nil {
+		return model.NetworkElement{}, false
+	}
+	return ne, ok
 }
