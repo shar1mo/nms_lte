@@ -57,7 +57,10 @@ func (s *Service) ApplyChange(input ApplyChangeInput) (model.CMRequest, error) {
 		req.Steps = append(req.Steps, newStep("unlock", "success", "candidate config unlocked"))
 		req.Status = "failed"
 		req.UpdatedAt = time.Now().UTC()
-		s.store.SaveCMRequest(req)
+		err := s.store.SaveCMRequest(req)
+		if err != nil {
+			return req, err
+		}
 		return req, nil
 	}
 
@@ -67,7 +70,10 @@ func (s *Service) ApplyChange(input ApplyChangeInput) (model.CMRequest, error) {
 	req.Status = "success"
 	req.UpdatedAt = time.Now().UTC()
 
-	s.store.SaveCMRequest(req)
+	err = s.store.SaveCMRequest(req)
+	if err != nil {
+		return req, err
+	}
 	return req, nil
 }
 

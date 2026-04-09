@@ -87,7 +87,10 @@ func (s *Service) Register(name, address, vendor string, capabilities []string) 
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
-	s.store.SaveNE(ne)
+	err := s.store.SaveNE(ne)
+	if err != nil {
+		return model.NetworkElement{}, err
+	}
 
 	if s.connector != nil {
 		s.startWatcher(ne.ID)
@@ -176,7 +179,10 @@ func (s *Service) connectionLoop(neID string) {
 		session, err := s.connector.Connect(ne.Address)
 		if err != nil {
 			s.clearManagedConn(neID, nil)
-			s.updateConnectionState(neID, "disconnected", nil)
+			if err := s.updateConnectionState(neID, "disconnected", nil); err != nil {
+				return
+			}
+
 			if !s.waitReconnect() {
 				return
 			}
@@ -187,7 +193,10 @@ func (s *Service) connectionLoop(neID string) {
 		if err != nil {
 			session.Close()
 			s.clearManagedConn(neID, nil)
-			s.updateConnectionState(neID, "disconnected", nil)
+			if err := s.updateConnectionState(neID, "disconnected", nil); err != nil {
+				return
+			}
+
 			if !s.waitReconnect() {
 				return
 			}
@@ -196,11 +205,17 @@ func (s *Service) connectionLoop(neID string) {
 
 		conn := &managedConn{client: session}
 		s.setManagedConn(neID, conn)
-		s.updateConnectionState(neID, "connected", capabilities)
+		if err := s.updateConnectionState(neID, "connected", capabilities); err != nil {
+			s.releaseManagedConn(neID, conn)
+			return
+		}
+
 		if !s.monitorSession(neID, conn) {
 			return
 		}
-		s.updateConnectionState(neID, "reconnecting", nil)
+		if err := s.updateConnectionState(neID, "reconnecting", nil); err != nil {
+			return
+		}
 	}
 }
 
@@ -253,7 +268,9 @@ func (s *Service) updateConnectionState(neID, status string, capabilities []stri
 		ne.Capabilities = append([]string(nil), capabilities...)
 	}
 	ne.UpdatedAt = time.Now().UTC()
-	s.store.SaveNE(ne)
+	if err := s.store.SaveNE(ne); err != nil {
+		return err
+	}
 
 	return nil
 }

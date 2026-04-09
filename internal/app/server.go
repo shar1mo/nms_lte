@@ -1,7 +1,9 @@
 package app
 
 import (
+	"io/fs"
 	"net/http"
+	"os"
 	"time"
 
 	"nms_lte/internal/httpapi"
@@ -13,10 +15,10 @@ import (
 	"nms_lte/internal/store/postgres"
 )
 
-func NewHTTPServer(port string) (*http.Server, error) {
+func NewHTTPServer(port string, frontendFS fs.FS) (*http.Server, error) {
 	// store := memory.New()
 
-	store, err := postgres.New("")
+	store, err := postgres.New(os.Getenv("DATABASE_URL"))
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +33,7 @@ func NewHTTPServer(port string) (*http.Server, error) {
 	faultService := fault.NewService(store)
 	pmService := pm.NewService(store)
 
-	handler := httpapi.NewHandler(neService, inventoryService, cmService, faultService, pmService)
+	handler := httpapi.NewHandler(neService, inventoryService, cmService, faultService, pmService, frontendFS)
 
 	return &http.Server{
 		Addr:              ":" + port,

@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"embed"
 	"errors"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -13,13 +15,26 @@ import (
 	"nms_lte/internal/app"
 )
 
+//go:embed frontend/dist
+var Dist embed.FS
+
+// @title NMS LTE API
+// @version 1.0
+// @description REST API for managing network elements, inventory, configuration, faults, and performance metrics.
+// @BasePath /
+// @schemes http
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	srv, err := app.NewHTTPServer(port)
+	frontendFS, err := fs.Sub(Dist, "frontend/dist")
+	if err != nil {
+		log.Fatalf("frontend init error: %v", err)
+	}
+
+	srv, err := app.NewHTTPServer(port, frontendFS)
 	if err != nil {
 		log.Fatalf("startup error: %v", err)
 	}

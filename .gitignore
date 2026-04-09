@@ -17,10 +17,12 @@ coverage.*
 *.coverprofile
 profile.cov
 netconf-client
+nms-lte
 
 # Dependency directories (remove the comment below to include it)
 vendor/
 third_party/
+docs/swagger
 
 # Go workspace file
 go.work
@@ -35,3 +37,5 @@ go.work.sum
 .DS_Store
 .build/
 .local/
+frontend/
+cmd/nms-lte/frontend/dist/

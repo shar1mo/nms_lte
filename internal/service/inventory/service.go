@@ -132,7 +132,10 @@ func (s *Service) Sync(neID string) (model.InventorySnapshot, error) {
 		Objects:  objects,
 	}
 
-	s.store.SaveInventorySnapshot(snapshot)
+	err = s.store.SaveInventorySnapshot(snapshot)
+	if err != nil {
+		return model.InventorySnapshot{}, err
+	}
 	return snapshot, nil
 }
 
