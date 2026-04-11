@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"time"
+	"errors"
 
 	"nms_lte/internal/httpapi"
 	"nms_lte/internal/service/cm"
@@ -17,6 +18,11 @@ import (
 
 func NewHTTPServer(port string, frontendFS fs.FS) (*http.Server, error) {
 	// store := memory.New()
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		return nil, errors.New("DATABASE_URL is not set")
+	}
 
 	store, err := postgres.New(os.Getenv("DATABASE_URL"))
 	if err != nil {

@@ -4,11 +4,14 @@ import (
 	"testing"
 
 	"nms_lte/internal/service/ne"
-	"nms_lte/internal/store/memory"
+	"nms_lte/internal/store/postgres"
 )
 
 func TestApplyChangeSuccess(t *testing.T) {
-	store := memory.New()
+	store, err := postgres.New(postgres.ConnString)
+	if err != nil {
+		t.Fatalf("postgres store: %v", err)
+	}
 	neService := ne.NewService(store)
 	cmService := NewService(store)
 
@@ -34,7 +37,10 @@ func TestApplyChangeSuccess(t *testing.T) {
 }
 
 func TestApplyChangeValidationFail(t *testing.T) {
-	store := memory.New()
+	store, err := postgres.New(postgres.ConnString)
+	if err != nil {
+		t.Fatalf("postgres store: %v", err)
+	}
 	neService := ne.NewService(store)
 	cmService := NewService(store)
 

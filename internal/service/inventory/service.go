@@ -9,7 +9,6 @@ import (
 	"nms_lte/internal/id"
 	"nms_lte/internal/infra/netconf"
 	"nms_lte/internal/model"
-	"nms_lte/internal/store/postgres"
 )
 
 type Store interface {
@@ -27,10 +26,6 @@ type Service struct {
 	rpcProvider RPCProvider
 }
 
-type ServicePG struct {
-	store *postgres.Store
-}
-
 func NewService(store Store, rpcProvider RPCProvider) *Service {
 	return &Service{
 		store:       store,
@@ -38,12 +33,12 @@ func NewService(store Store, rpcProvider RPCProvider) *Service {
 	}
 }
 
-func (s *ServicePG) Sync(neID string) (model.InventorySnapshot, error) {
+func (s *Service) Sync(neID string) (model.InventorySnapshot, error) {
 	if strings.TrimSpace(neID) == "" {
 		return model.InventorySnapshot{}, errors.New("neID is required")
 	}
 
-	ne, ok, err := s.store.GetNE(neID)
+	neItem, ok, err := s.store.GetNE(neID)
 	if err != nil {
 		return model.InventorySnapshot{}, err
 	}
@@ -51,45 +46,60 @@ func (s *ServicePG) Sync(neID string) (model.InventorySnapshot, error) {
 		return model.InventorySnapshot{}, errors.New("network element not found")
 	}
 
-	now := time.Now().UTC()
+	var objects []model.InventoryObject
 
-	objects := []model.InventoryObject{
-		{
-			DN:    fmt.Sprintf("SubNetwork=LTE,ManagedElement=%s", ne.ID),
-			Class: "ManagedElement",
-			Attributes: map[string]string{
-				"name":   ne.Name,
-				"vendor": ne.Vendor,
+	if s.rpcProvider == nil {
+		objects = []model.InventoryObject{
+			{
+				DN:    fmt.Sprintf("SubNetwork=LTE,ManagedElement=%s", neItem.ID),
+				Class: "ManagedElement",
+				Attributes: map[string]string{
+					"name":   neItem.Name,
+					"vendor": neItem.Vendor,
+				},
 			},
-		},
-		{
-			DN:    fmt.Sprintf("SubNetwork=LTE,ManagedElement=%s,ENBFunction=1", ne.ID),
-			Class: "ENBFunction",
-			Attributes: map[string]string{
-				"status": ne.Status,
+			{
+				DN:    fmt.Sprintf("SubNetwork=LTE,ManagedElement=%s,ENBFunction=1", neItem.ID),
+				Class: "ENBFunction",
+				Attributes: map[string]string{
+					"status": neItem.Status,
+				},
 			},
-		},
-		{
-			DN:    fmt.Sprintf("SubNetwork=LTE,ManagedElement=%s,ENBFunction=1,EUtranCellFDD=cell-1", ne.ID),
-			Class: "EUtranCellFDD",
-			Attributes: map[string]string{
-				"pci":      "100",
-				"earfcnDL": "300",
+			{
+				DN:    fmt.Sprintf("SubNetwork=LTE,ManagedElement=%s,ENBFunction=1,EUtranCellFDD=cell-1", neItem.ID),
+				Class: "EUtranCellFDD",
+				Attributes: map[string]string{
+					"pci":      "100",
+					"earfcnDL": "300",
+				},
 			},
-		},
-		{
-			DN:    fmt.Sprintf("SubNetwork=LTE,ManagedElement=%s,ENBFunction=1,EUtranFrequency=1", ne.ID),
-			Class: "EUtranFrequency",
-			Attributes: map[string]string{
-				"earfcn": "300",
+			{
+				DN:    fmt.Sprintf("SubNetwork=LTE,ManagedElement=%s,ENBFunction=1,EUtranFrequency=1", neItem.ID),
+				Class: "EUtranFrequency",
+				Attributes: map[string]string{
+					"earfcn": "300",
+				},
 			},
-		},
+		}
+	} else {
+		configReply, stateReply, err := s.readInventoryData(neID)
+		if err != nil {
+			return model.InventorySnapshot{}, err
+		}
+
+		objects, err = buildInventoryObjects(configReply, stateReply)
+		if err != nil {
+			return model.InventorySnapshot{}, err
+		}
+		if err := validateInventoryObjects(objects); err != nil {
+			return model.InventorySnapshot{}, err
+		}
 	}
 
 	snapshot := model.InventorySnapshot{
 		ID:       id.New("inv"),
-		NEID:     neID,
-		SyncedAt: now,
+		NEID:     neItem.ID,
+		SyncedAt: time.Now().UTC(),
 		Objects:  objects,
 	}
 
@@ -100,47 +110,20 @@ func (s *ServicePG) Sync(neID string) (model.InventorySnapshot, error) {
 	return snapshot, nil
 }
 
-func (s *Service) Sync(neID string) (model.InventorySnapshot, error) {
-	neItem, ok, err := s.store.GetNE(neID)
-	if err != nil {
-		return model.InventorySnapshot{}, err
-	}
-	if !ok {
-		return model.InventorySnapshot{}, errors.New("network element not found")
-	}
-	if s.rpcProvider == nil {
-		return model.InventorySnapshot{}, errors.New("inventory reader is not configured")
-	}
-
-	configReply, stateReply, err := s.readInventoryData(neID)
-	if err != nil {
-		return model.InventorySnapshot{}, err
-	}
-
-	objects, err := buildInventoryObjects(configReply, stateReply)
-	if err != nil {
-		return model.InventorySnapshot{}, err
-	}
-	if err := validateInventoryObjects(objects); err != nil {
-		return model.InventorySnapshot{}, err
-	}
-
-	snapshot := model.InventorySnapshot{
-		ID:       id.New("inv"),
-		NEID:     neItem.ID,
-		SyncedAt: time.Now().UTC(),
-		Objects:  objects,
-	}
-
-	err = s.store.SaveInventorySnapshot(snapshot)
-	if err != nil {
-		return model.InventorySnapshot{}, err
-	}
-	return snapshot, nil
-}
-
 func (s *Service) GetLatest(neID string) (model.InventorySnapshot, error) {
-	return s.store.GetLatestInventorySnapshot(neID)
+	if strings.TrimSpace(neID) == "" {
+		return model.InventorySnapshot{}, errors.New("neID is required")
+	}
+
+	snapshot, err := s.store.GetLatestInventorySnapshot(neID)
+	if err != nil {
+		return model.InventorySnapshot{}, err
+	}
+	if snapshot.ID == "" {
+		return model.InventorySnapshot{}, errors.New("snapshot not found")
+	}
+
+	return snapshot, nil
 }
 
 func (s *Service) readInventoryData(neID string) ([]byte, []byte, error) {
@@ -174,21 +157,4 @@ func (s *Service) readInventoryData(neID string) ([]byte, []byte, error) {
 	default:
 		return nil, nil, err
 	}
-}
-
-func (s *ServicePG) GetLatestPG(neID string) (model.InventorySnapshot, error) {
-	if strings.TrimSpace(neID) == "" {
-		return model.InventorySnapshot{}, errors.New("neID is required")
-	}
-
-	snapshot, err := s.store.GetLatestInventorySnapshot(neID)
-	if err != nil {
-		return model.InventorySnapshot{}, err
-	}
-
-	if snapshot.ID == "" {
-		return model.InventorySnapshot{}, errors.New("snapshot not found")
-	}
-
-	return snapshot, nil
 }

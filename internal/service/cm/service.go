@@ -15,14 +15,15 @@ type ApplyChangeInput struct {
 	Value     string `json:"value"`
 }
 
-type Service struct {
-	store Store
-}
-
 type Store interface {
 	GetNE(id string) (model.NetworkElement, bool, error)
 	SaveCMRequest(req model.CMRequest) error
 	ListCMRequests() ([]model.CMRequest, error)
+	GetCMRequest(id string) (model.CMRequest, error)
+}
+
+type Service struct {
+	store Store
 }
 
 func NewService(store Store) *Service {
@@ -79,6 +80,10 @@ func (s *Service) ApplyChange(input ApplyChangeInput) (model.CMRequest, error) {
 
 func (s *Service) ListRequests() ([]model.CMRequest, error) {
 	return s.store.ListCMRequests()
+}
+
+func (s *Service) GetCMRequest(id string) (model.CMRequest, error) {
+	return s.store.GetCMRequest(id)
 }
 
 func newStep(name, status, message string) model.CMStep {

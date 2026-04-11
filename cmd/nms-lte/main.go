@@ -23,6 +23,7 @@ var Dist embed.FS
 // @description REST API for managing network elements, inventory, configuration, faults, and performance metrics.
 // @BasePath /
 // @schemes http
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {

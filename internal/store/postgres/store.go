@@ -240,12 +240,120 @@ func (s *Store) GetLatestInventorySnapshot(neID string) (model.InventorySnapshot
 	return inventory, nil
 }
 
-func (s *Store) ListCMRequests() ([]model.CMRequest, error) {
-	return nil, nil
+func (s *Store) SaveCMRequest(req model.CMRequest) error {
+	tx, err := s.db.Begin(context.Background())
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback(context.Background())
+	}()
+
+	queryRequest := `
+	INSERT INTO cm_requests (
+		id, ne_id, parameter, value, status, created_at, updated_at
+	) VALUES ($1, $2, $3, $4, $5, $6, $7)
+	ON CONFLICT (id) DO UPDATE
+	SET created_at = EXCLUDED.created_at,
+			updated_at = EXCLUDED.updated_at
+	`
+
+	querySteps := `
+	INSERT INTO cm_steps (
+		request_id, name, status, message, created_at
+	) VALUES ($1, $2, $3, $4, $5)
+	`
+
+	_, err = tx.Exec(context.Background(),
+		queryRequest,
+		req.ID,
+		req.NEID,
+		req.Parameter,
+		req.Value,
+		req.Status,
+		req.CreatedAt,
+		req.UpdatedAt,
+	)
+	if err != nil {
+		return err
+	}
+
+	for _, step := range req.Steps {
+		_, err := tx.Exec(context.Background(),
+			querySteps,
+			req.ID,
+			step.Name,
+			step.Status,
+			step.Message,
+			step.CreatedAt,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit(context.Background())
 }
 
-func (s *Store) SaveCMRequest(req model.CMRequest) error {
-	return nil
+func (s *Store) ListCMRequests() ([]model.CMRequest, error) {
+	query := `
+	SELECT id, ne_id, parameter, value, status, created_at, updated_at
+	FROM cm_requests
+	ORDER BY created_at
+	`
+
+	rows, err := s.db.Query(context.Background(), query)
+	if err != nil {
+		return nil, err
+	}
+
+	var out []model.CMRequest
+	for rows.Next() {
+		var req model.CMRequest
+		err := rows.Scan(
+			&req.ID,
+			&req.NEID,
+			&req.Parameter,
+			&req.Value,
+			&req.Status,
+			&req.CreatedAt,
+			&req.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, req)
+	}
+	return out, nil
+}
+
+func (s *Store) GetCMRequest(id string) (model.CMRequest, error) {
+	query := `
+	SELECT id, ne_id, parameter, value, status, created_at, updated_at
+	FROM cm_requests
+	WHERE id = $1;
+	`
+
+	var req model.CMRequest
+	
+	err := s.db.QueryRow(context.Background(), query, id).Scan(
+		&req.ID,
+		&req.NEID,
+		&req.Parameter,
+		&req.Value,
+		&req.Status,
+		&req.CreatedAt,
+		&req.UpdatedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.CMRequest{}, nil
+		}
+		return model.CMRequest{}, fmt.Errorf("get cm request id=%s: %w", id, err)
+	}
+
+	return req, nil
 }
 
 func (s *Store) AddFaultEvent(event model.FaultEvent) {

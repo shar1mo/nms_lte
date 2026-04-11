@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS network_elements (
-    id TEXT PRIMARY KEY, -- NE ID -- like enb_001? 
+    id TEXT PRIMARY KEY, -- generated in application (e.g. ne-...)
     name TEXT NOT NULL,
     address TEXT NOT NULL,
     vendor TEXT,
@@ -11,14 +11,14 @@ CREATE TABLE IF NOT EXISTS network_elements (
 
 -- Inventory
 CREATE TABLE IF NOT EXISTS inventory_snapshots (
-    id TEXT PRIMARY KEY, -- Snapshot ID -- like snapshot_001 or ...?
+    id TEXT PRIMARY KEY, -- generated in application (e.g. inv-...)
     ne_id TEXT NOT NULL,
     synced_at TIMESTAMPTZ NOT NULL,
     FOREIGN KEY (ne_id) REFERENCES network_elements(id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS inventory_objects (
-    id SERIAL PRIMARY KEY, -- like inventory_snapshot_id or ...?
+CREATE TABLE IF NOT EXISTS inventory_objects (  
+    id SERIAL PRIMARY KEY, -- internal ID (auto-increment), not used outside DB
     snapshot_id TEXT NOT NULL,
     dn TEXT NOT NULL,
     class TEXT NOT NULL,
@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS inventory_objects (
 
 -- CM
 CREATE TABLE IF NOT EXISTS cm_requests (
-    id TEXT PRIMARY KEY, -- config id or request id -- like req_001 or ...?
+    id TEXT PRIMARY KEY, -- generated in application (e.g. req-...)
     ne_id TEXT NOT NULL,
     parameter TEXT NOT NULL,
     value TEXT NOT NULL,
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS cm_requests (
 );
 
 CREATE TABLE IF NOT EXISTS cm_steps (
-    id SERIAL PRIMARY KEY,
+    id SERIAL PRIMARY KEY, -- internal ID (auto-increment), not used outside DB
     request_id TEXT NOT NULL,
     name TEXT NOT NULL,
     status TEXT NOT NULL,
@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS cm_steps (
 
 -- Fault
 CREATE TABLE IF NOT EXISTS fault_events (
-    id TEXT PRIMARY KEY, -- like fault_001 or id or timestamp or ...?
+    id TEXT PRIMARY KEY, -- generated in application (e.g. fault-...)
     ne_id TEXT NOT NULL,
     severity TEXT NOT NULL,
     message TEXT NOT NULL,
@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS fault_events (
 
 -- Heartbeat
 CREATE TABLE IF NOT EXISTS heartbeats (
-    ne_id TEXT PRIMARY KEY, 
+    ne_id TEXT PRIMARY KEY, -- one heartbeat state per network element
     healthy BOOLEAN NOT NULL,
     checked_at TIMESTAMPTZ NOT NULL,
     FOREIGN KEY (ne_id) REFERENCES network_elements(id) ON DELETE CASCADE
@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS heartbeats (
 
 -- PM
 CREATE TABLE IF NOT EXISTS pm_samples (
-    id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY, -- generated in application (e.g. pm-...)
     ne_id TEXT NOT NULL,
     metric TEXT NOT NULL,
     value DOUBLE PRECISION NOT NULL,

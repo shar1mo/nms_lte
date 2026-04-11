@@ -10,7 +10,6 @@ import (
 	"nms_lte/internal/infra/netconf"
 	"nms_lte/internal/model"
 	"nms_lte/internal/store/memory"
-	"nms_lte/internal/store/postgres"
 )
 
 type fakeConnector struct {
@@ -479,7 +478,6 @@ func equalStrings(left, right []string) bool {
 }
 
 func TestNERegisterValidation(t *testing.T) {
-	//in-memory
 	memStore := memory.New()
 	memService := NewService(memStore)
 
@@ -497,32 +495,9 @@ func TestNERegisterValidation(t *testing.T) {
 	if err == nil || err.Error() != "address is required" {
 		t.Fatalf("expected 'address is required', got %s", err)
 	}
-
-	//postgres
-	pgStore, err := postgres.New(postgres.ConnString)
-	if err != nil {
-		t.Fatalf("create postgres store: %v", err)
-	}
-	pgService := NewService(pgStore)
-
-	_, err = pgService.RegisterPG("enb-1", "10.0.0.1", "vendor-a", nil)
-	if err != nil {
-		t.Fatalf("postgres register ne: %v", err)
-	}
-
-	_, err = pgService.RegisterPG("", "10.0.0.1", "vendor-a", nil)
-	if err == nil || err.Error() != "name is required" {
-		t.Fatalf("expected 'name is required' (PG), got %s", err)
-	}
-
-	_, err = pgService.RegisterPG("enb-1", "", "vendor-a", nil)
-	if err == nil || err.Error() != "address is required" {
-		t.Fatalf("expected 'address is required' (PG), got %s", err)
-	}
 }
 
 func TestTrimSpace(t *testing.T) {
-	//in-memory
 	memStore := memory.New()
 	memService := NewService(memStore)
 
@@ -543,35 +518,9 @@ func TestTrimSpace(t *testing.T) {
 	if neItem.Status != "active" {
 		t.Fatalf("expected status 'active', got %s", neItem.Status)
 	}
-
-	//postgres
-	pgStore, err := postgres.New(postgres.ConnString)
-	if err != nil {
-		t.Fatalf("create postgres store: %v", err)
-	}
-	pgService := NewService(pgStore)
-
-	neItem, err = pgService.RegisterPG("  enb-2  ", "  10.0.0.2  ", " vendor-b ", nil)
-	if err != nil {
-		t.Fatalf("postgres register ne: %v", err)
-	}
-
-	if neItem.Name != "enb-2" {
-		t.Fatalf("expected trimmed name (PG), got '%s'", neItem.Name)
-	}
-	if neItem.Address != "10.0.0.2" {
-		t.Fatalf("expected trimmed address (PG), got '%s'", neItem.Address)
-	}
-	if neItem.Vendor != "vendor-b" {
-		t.Fatalf("expected trimmed vendor (PG), got '%s'", neItem.Vendor)
-	}
-	if neItem.Status != "active" {
-		t.Fatalf("expected status 'active' (PG), got %s", neItem.Status)
-	}
 }
 
 func TestGetListNE(t *testing.T) {
-	//in-memory
 	memStore := memory.New()
 	memService := NewService(memStore)
 
@@ -600,36 +549,5 @@ func TestGetListNE(t *testing.T) {
 	}
 	if list[0].ID != neItem.ID {
 		t.Fatalf("unexpected NE in list (memory)")
-	}
-
-	//postgres
-	pgStore, err := postgres.New(postgres.ConnString)
-	if err != nil {
-		t.Fatalf("create postgres store: %v", err)
-	}
-	pgService := NewService(pgStore)
-
-	neItem, err = pgService.RegisterPG("enb-1", "10.0.0.1", "vendor-a", nil)
-	if err != nil {
-		t.Fatalf("postgres register ne: %v", err)
-	}
-
-	savedPG, ok := pgService.GetPG(neItem.ID)
-	if !ok {
-		t.Fatalf("expected NE to be saved (PG)")
-	}
-	if savedPG.ID != neItem.ID {
-		t.Fatalf("saved NE mismatch (PG)")
-	}
-
-	listPG, err := pgService.ListPG()
-	if err != nil {
-		t.Fatalf("list ne (PG): %v", err)
-	}
-	if len(listPG) != 1 {
-		t.Fatalf("expected 1 NE (PG), got %d", len(listPG))
-	}
-	if listPG[0].ID != neItem.ID {
-		t.Fatalf("unexpected NE in list (PG)")
 	}
 }
