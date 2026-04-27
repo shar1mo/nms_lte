@@ -356,6 +356,68 @@ func (s *Store) GetCMRequest(id string) (model.CMRequest, error) {
 	return req, nil
 }
 
+func (s *Store) CreateUser(ctx context.Context, user model.User) error {
+	query := `
+		INSERT INTO users (id, username, email, password_hash, created_at)
+		VALUES ($1, $2, $3, $4, $5)
+	`
+
+	_, err := s.db.Exec(ctx,
+		query,
+		user.ID,
+		user.Username,
+		user.Email,
+		user.PasswordHash,
+		user.CreatedAt,
+	)
+
+	return err
+}
+
+func (s *Store) GetUserByEmail(ctx context.Context, email string) (model.User, error) {
+	query := `
+		SELECT id, username, email, password_hash, created_at
+		FROM users
+		WHERE email = $1
+	`
+
+	var user model.User
+	err := s.db.QueryRow(ctx, query, email).Scan(
+		&user.ID,
+		&user.Username,
+		&user.Email,
+		&user.PasswordHash,
+		&user.CreatedAt,
+	)
+	if err != nil {
+		return model.User{}, err
+	}
+
+	return user, nil
+}
+
+func (s *Store) GetUserByUsername(ctx context.Context, username string) (model.User, error) {
+	query := `
+		SELECT id, username, email, password_hash, created_at
+		FROM users
+		WHERE username = $1
+	`
+
+	var user model.User
+	err := s.db.QueryRow(ctx, query, username).Scan(
+		&user.ID,
+		&user.Username,
+		&user.Email,
+		&user.PasswordHash,
+		&user.CreatedAt,
+	)
+	if err != nil {
+		return model.User{}, err
+	}
+
+	return user, nil
+}
+
 func (s *Store) AddFaultEvent(event model.FaultEvent) {
 }
 

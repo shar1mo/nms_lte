@@ -1,12 +1,13 @@
 package app
 
 import (
+	"errors"
 	"io/fs"
 	"net/http"
 	"os"
 	"time"
-	"errors"
 
+	"nms_lte/internal/auth"
 	"nms_lte/internal/httpapi"
 	"nms_lte/internal/service/cm"
 	"nms_lte/internal/service/fault"
@@ -17,14 +18,12 @@ import (
 )
 
 func NewHTTPServer(port string, frontendFS fs.FS) (*http.Server, error) {
-	// store := memory.New()
-
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		return nil, errors.New("DATABASE_URL is not set")
 	}
 
-	store, err := postgres.New(os.Getenv("DATABASE_URL"))
+	store, err := postgres.New(dsn)
 	if err != nil {
 		return nil, err
 	}
@@ -38,8 +37,17 @@ func NewHTTPServer(port string, frontendFS fs.FS) (*http.Server, error) {
 	cmService := cm.NewService(store)
 	faultService := fault.NewService(store)
 	pmService := pm.NewService(store)
+	authService := auth.NewService(store)
 
-	handler := httpapi.NewHandler(neService, inventoryService, cmService, faultService, pmService, frontendFS)
+	handler := httpapi.NewHandler(
+		neService,
+		inventoryService,
+		cmService,
+		faultService,
+		pmService,
+		authService,
+		frontendFS,
+	)
 
 	return &http.Server{
 		Addr:              ":" + port,

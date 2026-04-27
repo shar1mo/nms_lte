@@ -13,6 +13,7 @@ import (
 	"nms_lte/internal/service/inventory"
 	"nms_lte/internal/service/ne"
 	"nms_lte/internal/service/pm"
+	"nms_lte/internal/auth"
 )
 
 type Handler struct {
@@ -21,6 +22,7 @@ type Handler struct {
 	cmService        *cm.Service
 	faultService     *fault.Service
 	pmService        *pm.Service
+	authService 		 *auth.Service
 }
 
 func NewHandler(
@@ -29,6 +31,7 @@ func NewHandler(
 	cmService *cm.Service,
 	faultService *fault.Service,
 	pmService *pm.Service,
+	authService *auth.Service,
 	frontendFS fs.FS,
 ) http.Handler {
 	h := &Handler{
@@ -37,10 +40,13 @@ func NewHandler(
 		cmService:        cmService,
 		faultService:     faultService,
 		pmService:        pmService,
+		authService: 			authService,
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", h.handleHealth)
+	mux.HandleFunc("/api/v1/auth/register", h.handleAuthRegister)
+	mux.HandleFunc("/api/v1/auth/login", h.handleAuthLogin)
 	registerSwaggerRoutes(mux)
 	mux.HandleFunc("/api/v1/ne", h.handleNECollection)
 	mux.HandleFunc("/api/v1/ne/", h.handleNEDetails)
@@ -74,6 +80,50 @@ func (h *Handler) handleNECollection(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func (h *Handler) handleAuthRegister(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req AuthRegisterRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	user, err := h.authService.Register(r.Context(), req.Email, req.Username, req.Password)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, user)
+}
+
+func (h *Handler) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req AuthLoginRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	token, err := h.authService.Login(r.Context(), req.Email, req.Username, req.Password)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, AuthLoginResponse{
+		Token: token,
+	})
 }
 
 func (h *Handler) handleNEDetails(w http.ResponseWriter, r *http.Request) {

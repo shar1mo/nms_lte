@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
+
 	"nms_lte/internal/app"
 )
 
@@ -25,6 +27,8 @@ var Dist embed.FS
 // @schemes http
 
 func main() {
+	_ = godotenv.Load()
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"

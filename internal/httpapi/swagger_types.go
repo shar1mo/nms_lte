@@ -100,3 +100,19 @@ type PMSample struct {
 	Value       float64   `json:"value"`
 	CollectedAt time.Time `json:"collected_at"`
 }
+
+type AuthRegisterRequest struct {
+	Email    string `json:"email"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type AuthLoginRequest struct {
+	Email    string `json:"email"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type AuthLoginResponse struct {
+	Token string `json:"token"`
+}
