@@ -13,6 +13,7 @@ type ApplyChangeInput struct {
 	NEID      string `json:"ne_id"`
 	Parameter string `json:"parameter"`
 	Value     string `json:"value"`
+	CreatedBy string `json:"-"`
 }
 
 type Store interface {
@@ -46,6 +47,7 @@ func (s *Service) ApplyChange(input ApplyChangeInput) (model.CMRequest, error) {
 		Parameter: strings.TrimSpace(input.Parameter),
 		Value:     strings.TrimSpace(input.Value),
 		Status:    "running",
+		CreatedBy: input.CreatedBy,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}

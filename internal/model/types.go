@@ -39,6 +39,7 @@ type CMRequest struct {
 	Parameter string    `json:"parameter"`
 	Value     string    `json:"value"`
 	Status    string    `json:"status"`
+	CreatedBy string    `json:"created_by"`
 	Steps     []CMStep  `json:"steps"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

@@ -251,11 +251,14 @@ func (s *Store) SaveCMRequest(req model.CMRequest) error {
 
 	queryRequest := `
 	INSERT INTO cm_requests (
-		id, ne_id, parameter, value, status, created_at, updated_at
-	) VALUES ($1, $2, $3, $4, $5, $6, $7)
+		id, ne_id, parameter, value, status, created_at, updated_at, created_by
+	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	ON CONFLICT (id) DO UPDATE
-	SET created_at = EXCLUDED.created_at,
-			updated_at = EXCLUDED.updated_at
+	SET parameter = EXCLUDED.parameter,
+		value = EXCLUDED.value,
+		status = EXCLUDED.status,
+		updated_at = EXCLUDED.updated_at,
+		created_by = EXCLUDED.created_by
 	`
 
 	querySteps := `
@@ -273,6 +276,7 @@ func (s *Store) SaveCMRequest(req model.CMRequest) error {
 		req.Status,
 		req.CreatedAt,
 		req.UpdatedAt,
+		req.CreatedBy,
 	)
 	if err != nil {
 		return err
@@ -297,7 +301,7 @@ func (s *Store) SaveCMRequest(req model.CMRequest) error {
 
 func (s *Store) ListCMRequests() ([]model.CMRequest, error) {
 	query := `
-	SELECT id, ne_id, parameter, value, status, created_at, updated_at
+	SELECT id, ne_id, parameter, value, status, created_at, updated_at, created_by
 	FROM cm_requests
 	ORDER BY created_at
 	`
@@ -306,6 +310,7 @@ func (s *Store) ListCMRequests() ([]model.CMRequest, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 
 	var out []model.CMRequest
 	for rows.Next() {
@@ -318,24 +323,30 @@ func (s *Store) ListCMRequests() ([]model.CMRequest, error) {
 			&req.Status,
 			&req.CreatedAt,
 			&req.UpdatedAt,
+			&req.CreatedBy,
 		)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, req)
 	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return out, nil
 }
 
 func (s *Store) GetCMRequest(id string) (model.CMRequest, error) {
 	query := `
-	SELECT id, ne_id, parameter, value, status, created_at, updated_at
+	SELECT id, ne_id, parameter, value, status, created_at, updated_at, created_by
 	FROM cm_requests
 	WHERE id = $1;
 	`
 
 	var req model.CMRequest
-	
+
 	err := s.db.QueryRow(context.Background(), query, id).Scan(
 		&req.ID,
 		&req.NEID,
@@ -344,6 +355,7 @@ func (s *Store) GetCMRequest(id string) (model.CMRequest, error) {
 		&req.Status,
 		&req.CreatedAt,
 		&req.UpdatedAt,
+		&req.CreatedBy,
 	)
 
 	if err != nil {

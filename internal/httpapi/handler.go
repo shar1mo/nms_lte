@@ -44,13 +44,17 @@ func NewHandler(
 	}
 
 	mux := http.NewServeMux()
+
 	mux.HandleFunc("/healthz", h.handleHealth)
+	registerSwaggerRoutes(mux)
+
 	mux.HandleFunc("/api/v1/auth/register", h.handleAuthRegister)
 	mux.HandleFunc("/api/v1/auth/login", h.handleAuthLogin)
-	registerSwaggerRoutes(mux)
-	mux.HandleFunc("/api/v1/ne", h.handleNECollection)
-	mux.HandleFunc("/api/v1/ne/", h.handleNEDetails)
-	mux.HandleFunc("/api/v1/cm/requests", h.handleCMRequests)
+
+	mux.Handle("/api/v1/ne", auth.AuthMiddleware(http.HandlerFunc(h.handleNECollection)))
+	mux.Handle("/api/v1/ne/", auth.AuthMiddleware(http.HandlerFunc(h.handleNEDetails)))
+	mux.Handle("/api/v1/cm/requests", auth.AuthMiddleware(http.HandlerFunc(h.handleCMRequests)))
+
 	mux.HandleFunc("/api/v1/fault/events", h.handleFaultEvents)
 	mux.HandleFunc("/api/v1/pm/samples", h.handlePMSamples)
 	if frontendFS != nil {
@@ -455,20 +459,31 @@ func (h *Handler) handleCMRequestList(w http.ResponseWriter, _ *http.Request) {
 // @Failure 409 {object} CMRequest
 // @Router /api/v1/cm/requests [post]
 func (h *Handler) handleCMRequestCreate(w http.ResponseWriter, r *http.Request) {
+	userID, ok := auth.GetUserIDFromContext(r.Context())
+	if !ok || userID == "" {
+		writeError(w, http.StatusUnauthorized, "user is not authenticated")
+		return
+	}
+
 	var req cm.ApplyChangeInput
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	req.CreatedBy = userID
+
 	item, err := h.cmService.ApplyChange(req)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
+
 	if item.Status == "failed" {
 		writeJSON(w, http.StatusConflict, item)
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, item)
 }
 
