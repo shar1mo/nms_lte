@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"nms_lte/internal/service/cm"
 	"nms_lte/internal/service/fault"
@@ -54,9 +55,10 @@ func NewHandler(
 	mux.Handle("/api/v1/ne", auth.AuthMiddleware(http.HandlerFunc(h.handleNECollection)))
 	mux.Handle("/api/v1/ne/", auth.AuthMiddleware(http.HandlerFunc(h.handleNEDetails)))
 	mux.Handle("/api/v1/cm/requests", auth.AuthMiddleware(http.HandlerFunc(h.handleCMRequests)))
+	mux.Handle("/api/v1/pm/samples", auth.AuthMiddleware(http.HandlerFunc(h.handlePMSamples)))
 
 	mux.HandleFunc("/api/v1/fault/events", h.handleFaultEvents)
-	mux.HandleFunc("/api/v1/pm/samples", h.handlePMSamples)
+	
 	if frontendFS != nil {
 		mux.Handle("/", newFrontendHandler(frontendFS))
 	}
@@ -132,6 +134,7 @@ func (h *Handler) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleNEDetails(w http.ResponseWriter, r *http.Request) {
 	segments := splitNESubPath(r.URL.Path)
+
 	if len(segments) == 0 {
 		writeError(w, http.StatusNotFound, "not found")
 		return
@@ -144,56 +147,76 @@ func (h *Handler) handleNEDetails(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// GET /api/v1/ne/{id}
-	if len(segments) == 1 {
-		if r.Method != http.MethodGet {
-			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-			return
-		}
+	if r.Method == http.MethodGet && len(segments) == 1 {
 		h.handleNEGet(w, r)
 		return
 	}
 
-	if len(segments) == 3 && segments[1] == "inventory" && segments[2] == "sync" {
+	// POST /api/v1/ne/{id}/inventory/sync
+	if len(segments) == 3 &&
+		segments[1] == "inventory" &&
+		segments[2] == "sync" {
+
 		if r.Method != http.MethodPost {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
+
 		h.handleInventorySync(w, r)
 		return
 	}
 
-	if len(segments) == 3 && segments[1] == "inventory" && segments[2] == "latest" {
+	// GET /api/v1/ne/{id}/inventory/latest
+	if len(segments) == 3 &&
+		segments[1] == "inventory" &&
+		segments[2] == "latest" {
+
 		if r.Method != http.MethodGet {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
+
 		h.handleInventoryLatest(w, r)
 		return
 	}
 
-	if len(segments) == 3 && segments[1] == "heartbeat" && segments[2] == "check" {
+	// POST /api/v1/ne/{id}/heartbeat/check
+	if len(segments) == 3 &&
+		segments[1] == "heartbeat" &&
+		segments[2] == "check" {
+
 		if r.Method != http.MethodPost {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
+
 		h.handleHeartbeatCheck(w, r)
 		return
 	}
 
-	if len(segments) == 3 && segments[1] == "heartbeat" && segments[2] == "latest" {
+	// GET /api/v1/ne/{id}/heartbeat/latest
+	if len(segments) == 3 &&
+		segments[1] == "heartbeat" &&
+		segments[2] == "latest" {
+
 		if r.Method != http.MethodGet {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
+
 		h.handleHeartbeatLatest(w, r)
 		return
 	}
 
-	if len(segments) == 3 && segments[1] == "pm" && segments[2] == "collect" {
+	// POST /api/v1/ne/{id}/pm
+	if len(segments) == 2 &&
+		segments[1] == "pm" {
+
 		if r.Method != http.MethodPost {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
+
 		h.handlePMCollect(w, r)
 		return
 	}
@@ -545,8 +568,10 @@ func (h *Handler) handlePMSamples(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+
 	neID := r.URL.Query().Get("ne_id")
 	metric := r.URL.Query().Get("metric")
+
 	limit := 100
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
@@ -556,7 +581,42 @@ func (h *Handler) handlePMSamples(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = parsed
 	}
-	writeJSON(w, http.StatusOK, h.pmService.List(neID, metric, limit))
+
+	var from *time.Time
+	if raw := r.URL.Query().Get("from"); raw != "" {
+		parsed, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid from timestamp. Use RFC3339 format (2006-01-02T15:04:05Z)")
+			return
+		}
+		parsed = parsed.UTC()
+		from = &parsed
+	}
+
+	var to *time.Time
+	if raw := r.URL.Query().Get("to"); raw != "" {
+		parsed, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid to timestamp. Use RFC3339 format (2006-01-02T15:04:05Z)")
+			return
+		}
+		parsed = parsed.UTC()
+		to = &parsed
+	}
+
+	samples, err := h.pmService.List(
+		neID,
+		metric,
+		from,
+		to,
+		limit,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, samples)
 }
 
 func splitNESubPath(path string) []string {

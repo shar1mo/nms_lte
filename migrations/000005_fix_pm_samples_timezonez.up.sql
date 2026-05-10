@@ -1,0 +1,3 @@
+ALTER TABLE pm_samples
+ALTER COLUMN collected_at TYPE TIMESTAMPTZ
+USING collected_at AT TIME ZONE 'UTC';

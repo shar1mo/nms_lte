@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
+	"strings"
 
 	"nms_lte/internal/model"
 
@@ -430,15 +432,94 @@ func (s *Store) GetUserByUsername(ctx context.Context, username string) (model.U
 	return user, nil
 }
 
+func (s *Store) AddPMSample(sample model.PMSample) error {
+	query := `
+		INSERT INTO pm_samples (id, ne_id, metric, value, collected_at)
+		VALUES ($1, $2, $3, $4, $5)
+	`
+
+	_, err := s.db.Exec(context.Background(), query,
+		sample.ID,
+		sample.NEID,
+		sample.Metric,
+		sample.Value,
+		sample.CollectedAt.UTC(),
+	)
+
+	return err
+}
+
+func (s *Store) ListPMSamples(
+	neID,
+	metric string,
+	from,
+	to *time.Time,
+	limit int,
+) ([]model.PMSample, error) {
+	query := `
+		SELECT id, ne_id, metric, value, collected_at
+		FROM pm_samples
+		WHERE ($1 = '' OR ne_id = $1)
+		  AND ($2 = '' OR metric = $2)
+		  AND ($3::timestamptz IS NULL OR collected_at >= $3::timestamptz)
+		  AND ($4::timestamptz IS NULL OR collected_at <= $4::timestamptz)
+		ORDER BY collected_at DESC
+		LIMIT $5
+	`
+
+	var fromArg any
+	if from != nil {
+		t := from.UTC()
+		fromArg = t
+	}
+
+	var toArg any
+	if to != nil {
+		t := to.UTC()
+		toArg = t
+	}
+
+	rows, err := s.db.Query(
+		context.Background(),
+		query,
+		neID,
+		strings.ToLower(strings.TrimSpace(metric)),
+		fromArg,
+		toArg,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	samples := make([]model.PMSample, 0)
+
+	for rows.Next() {
+		var sample model.PMSample
+
+		err := rows.Scan(
+			&sample.ID,
+			&sample.NEID,
+			&sample.Metric,
+			&sample.Value,
+			&sample.CollectedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		samples = append(samples, sample)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return samples, nil
+}
+
 func (s *Store) AddFaultEvent(event model.FaultEvent) {
-}
-
-func (s *Store) AddPMSample(sample model.PMSample) {
-}
-
-func (s *Store) ListPMSamples(neID, metric string, limit int) []model.PMSample {
-
-	return nil
 }
 
 func (s *Store) SaveHeartbeat(hb model.HeartbeatStatus) {

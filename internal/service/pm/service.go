@@ -12,10 +12,8 @@ import (
 
 type Store interface {
 	GetNE(id string) (model.NetworkElement, bool, error)
-	SaveCMRequest(req model.CMRequest) error
-	ListCMRequests() ([]model.CMRequest, error)
-	AddPMSample(sample model.PMSample)
-	ListPMSamples(neID, metric string, limit int) []model.PMSample
+	AddPMSample(sample model.PMSample) error
+	ListPMSamples(neID, metric string, from, to *time.Time, limit int) ([]model.PMSample, error)
 }
 
 type Service struct {
@@ -41,7 +39,7 @@ func (s *Service) Collect(neID, metric string) (model.PMSample, error) {
 	if strings.TrimSpace(metric) == "" {
 		metric = "availability"
 	}
-	metric = strings.TrimSpace(metric)
+	metric = strings.ToLower(strings.TrimSpace(metric))
 
 	sample := model.PMSample{
 		ID:          id.New("pm"),
@@ -51,12 +49,24 @@ func (s *Service) Collect(neID, metric string) (model.PMSample, error) {
 		CollectedAt: time.Now().UTC(),
 	}
 
-	s.store.AddPMSample(sample)
+	err = s.store.AddPMSample(sample)
+	if err != nil {
+		return model.PMSample{}, err
+	}
 	return sample, nil
 }
 
-func (s *Service) List(neID, metric string, limit int) []model.PMSample {
-	return s.store.ListPMSamples(neID, metric, limit)
+func (s *Service) List(neID, metric string, from, to *time.Time, limit int) ([]model.PMSample, error) {
+	neID = strings.TrimSpace(neID)
+	metric = strings.ToLower(strings.TrimSpace(metric))
+
+	return s.store.ListPMSamples(
+		neID,
+		metric,
+		from,
+		to,
+		limit,
+	)
 }
 
 func (s *Service) generateValue(metric string) float64 {
