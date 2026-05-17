@@ -109,38 +109,54 @@ func (s *Store) ListCMRequests() ([]model.CMRequest, error) {
 	return out, nil
 }
 
-func (s *Store) AddFaultEvent(event model.FaultEvent) {
+func (s *Store) AddFaultEvent(event model.FaultEvent) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.faultEvents = append(s.faultEvents, event)
+
+	return nil
 }
 
-func (s *Store) ListFaultEvents(neID string) []model.FaultEvent {
+func (s *Store) SaveHeartbeat(hb model.HeartbeatStatus) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.heartbeats[hb.NEID] = hb
+
+	return nil
+}
+
+func (s *Store) GetHeartbeat(neID string) (model.HeartbeatStatus, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]model.FaultEvent, 0, len(s.faultEvents))
+
+	hb, ok := s.heartbeats[neID]
+
+	return hb, ok, nil
+}
+
+func (s *Store) ListFaultEvents(neID string, limit int) ([]model.FaultEvent, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	events := make([]model.FaultEvent, 0)
+
 	for _, event := range s.faultEvents {
 		if neID == "" || event.NEID == neID {
-			out = append(out, event)
+			events = append(events, event)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].CreatedAt.After(out[j].CreatedAt)
+
+	sort.Slice(events, func(i, j int) bool {
+		return events[i].CreatedAt.After(events[j].CreatedAt)
 	})
-	return out
-}
 
-func (s *Store) SaveHeartbeat(hb model.HeartbeatStatus) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.heartbeats[hb.NEID] = hb
-}
+	if limit > 0 && len(events) > limit {
+		events = events[:limit]
+	}
 
-func (s *Store) GetHeartbeat(neID string) (model.HeartbeatStatus, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	hb, ok := s.heartbeats[neID]
-	return hb, ok
+	return events, nil
 }
 
 func (s *Store) AddPMSample(sample model.PMSample) {

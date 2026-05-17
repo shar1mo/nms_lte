@@ -519,16 +519,108 @@ func (s *Store) ListPMSamples(
 	return samples, nil
 }
 
-func (s *Store) AddFaultEvent(event model.FaultEvent) {
+func (s *Store) AddFaultEvent(event model.FaultEvent) error {
+	query := `
+		INSERT INTO fault_events (
+			id, ne_id, severity, message, created_at
+		) VALUES ($1, $2, $3, $4, $5)
+	`
+
+	_, err := s.db.Exec(
+		context.Background(),
+		query,
+		event.ID,
+		event.NEID,
+		event.Severity,
+		event.Message,
+		event.CreatedAt.UTC(),
+	)
+
+	return err
 }
 
-func (s *Store) SaveHeartbeat(hb model.HeartbeatStatus) {
+func (s *Store) SaveHeartbeat(hb model.HeartbeatStatus) error {
+	query := `
+		INSERT INTO heartbeats (
+			ne_id, healthy, checked_at
+		) VALUES ($1, $2, $3)
+		ON CONFLICT (ne_id) DO UPDATE
+		SET healthy = EXCLUDED.healthy,
+			checked_at = EXCLUDED.checked_at
+	`
+
+	_, err := s.db.Exec(
+		context.Background(),
+		query,
+		hb.NEID,
+		hb.Healthy,
+		hb.CheckedAt.UTC(),
+	)
+
+	return err
 }
 
-func (s *Store) GetHeartbeat(neID string) (model.HeartbeatStatus, bool) {
-	return model.HeartbeatStatus{}, false
+func (s *Store) GetHeartbeat(neID string) (model.HeartbeatStatus, bool, error) {
+	query := `
+		SELECT ne_id, healthy, checked_at
+		FROM heartbeats
+		WHERE ne_id = $1
+	`
+
+	var hb model.HeartbeatStatus
+
+	err := s.db.QueryRow(context.Background(), query, neID).Scan(
+		&hb.NEID,
+		&hb.Healthy,
+		&hb.CheckedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return model.HeartbeatStatus{}, false, nil
+		}
+		return model.HeartbeatStatus{}, false, err
+	}
+
+	return hb, true, nil
 }
 
-func (s *Store) ListFaultEvents(neID string) []model.FaultEvent {
-	return nil
-}
+func (s *Store) ListFaultEvents(neID string, limit int) ([]model.FaultEvent, error) {
+	query := `
+		SELECT id, ne_id, severity, message, created_at
+		FROM fault_events
+		WHERE ($1 = '' OR ne_id = $1)
+		ORDER BY created_at DESC
+		LIMIT $2
+	`
+
+	rows, err := s.db.Query(context.Background(), query, neID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	events := make([]model.FaultEvent, 0)
+
+	for rows.Next() {
+		var event model.FaultEvent
+
+		err := rows.Scan(
+			&event.ID,
+			&event.NEID,
+			&event.Severity,
+			&event.Message,
+			&event.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		events = append(events, event)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return events, nil
+}	

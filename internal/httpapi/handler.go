@@ -56,8 +56,7 @@ func NewHandler(
 	mux.Handle("/api/v1/ne/", auth.AuthMiddleware(http.HandlerFunc(h.handleNEDetails)))
 	mux.Handle("/api/v1/cm/requests", auth.AuthMiddleware(http.HandlerFunc(h.handleCMRequests)))
 	mux.Handle("/api/v1/pm/samples", auth.AuthMiddleware(http.HandlerFunc(h.handlePMSamples)))
-
-	mux.HandleFunc("/api/v1/fault/events", h.handleFaultEvents)
+	mux.Handle("/api/v1/fault/events", auth.AuthMiddleware(http.HandlerFunc(h.handleFaultEvents)))
 	
 	if frontendFS != nil {
 		mux.Handle("/", newFrontendHandler(frontendFS))
@@ -385,6 +384,7 @@ func (h *Handler) handleInventoryLatest(w http.ResponseWriter, r *http.Request) 
 // @Router /api/v1/ne/{id}/heartbeat/check [post]
 func (h *Handler) handleHeartbeatCheck(w http.ResponseWriter, r *http.Request) {
 	neID := neIDFromRequest(r)
+
 	var req CheckHeartbeatRequest
 	if r.ContentLength > 0 {
 		if err := decodeJSON(r, &req); err != nil {
@@ -392,15 +392,18 @@ func (h *Handler) handleHeartbeatCheck(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
 	healthy := true
 	if req.Healthy != nil {
 		healthy = *req.Healthy
 	}
+
 	hb, err := h.faultService.CheckHeartbeat(neID, healthy)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
+
 	writeJSON(w, http.StatusOK, hb)
 }
 
@@ -415,11 +418,17 @@ func (h *Handler) handleHeartbeatCheck(w http.ResponseWriter, r *http.Request) {
 // @Router /api/v1/ne/{id}/heartbeat/latest [get]
 func (h *Handler) handleHeartbeatLatest(w http.ResponseWriter, r *http.Request) {
 	neID := neIDFromRequest(r)
-	hb, ok := h.faultService.GetHeartbeat(neID)
+
+	hb, ok, err := h.faultService.GetHeartbeat(neID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	if !ok {
 		writeError(w, http.StatusNotFound, "heartbeat not found")
 		return
 	}
+
 	writeJSON(w, http.StatusOK, hb)
 }
 
@@ -520,7 +529,24 @@ func (h *Handler) handleCMRequestCreate(w http.ResponseWriter, r *http.Request) 
 // @Router /api/v1/fault/events [get]
 func (h *Handler) handleFaultEventList(w http.ResponseWriter, r *http.Request) {
 	neID := r.URL.Query().Get("ne_id")
-	writeJSON(w, http.StatusOK, h.faultService.ListEvents(neID))
+
+	limit := 100
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			writeError(w, http.StatusBadRequest, "limit must be positive integer")
+			return
+		}
+		limit = parsed
+	}
+
+	events, err := h.faultService.ListEvents(neID, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, events)
 }
 
 // handleFaultEventCreate godoc
@@ -536,10 +562,12 @@ func (h *Handler) handleFaultEventList(w http.ResponseWriter, r *http.Request) {
 // @Router /api/v1/fault/events [post]
 func (h *Handler) handleFaultEventCreate(w http.ResponseWriter, r *http.Request) {
 	var req CreateFaultEventRequest
+
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
 	event, err := h.faultService.ReportEvent(req.NEID, req.Severity, req.Message)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
@@ -549,6 +577,7 @@ func (h *Handler) handleFaultEventCreate(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
 	writeJSON(w, http.StatusCreated, event)
 }
 

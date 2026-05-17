@@ -11,12 +11,10 @@ import (
 
 type Store interface {
 	GetNE(id string) (model.NetworkElement, bool, error)
-	SaveInventorySnapshot(snapshot model.InventorySnapshot) error
-	GetLatestInventorySnapshot(neID string) (model.InventorySnapshot, error)
-	SaveHeartbeat(hb model.HeartbeatStatus)
-	GetHeartbeat(neID string) (model.HeartbeatStatus, bool)
-	AddFaultEvent(event model.FaultEvent)
-	ListFaultEvents(neID string) []model.FaultEvent
+	SaveHeartbeat(hb model.HeartbeatStatus) error
+	GetHeartbeat(neID string) (model.HeartbeatStatus, bool, error)
+	AddFaultEvent(event model.FaultEvent) error
+	ListFaultEvents(neID string, limit int) ([]model.FaultEvent, error)
 }
 
 type Service struct {
@@ -35,12 +33,15 @@ func (s *Service) ReportEvent(neID, severity, message string) (model.FaultEvent,
 	if !ok {
 		return model.FaultEvent{}, errors.New("network element not found")
 	}
+
 	if strings.TrimSpace(message) == "" {
 		return model.FaultEvent{}, errors.New("message is required")
 	}
+
 	if strings.TrimSpace(severity) == "" {
 		severity = "warning"
 	}
+
 	event := model.FaultEvent{
 		ID:        id.New("fault"),
 		NEID:      strings.TrimSpace(neID),
@@ -48,7 +49,11 @@ func (s *Service) ReportEvent(neID, severity, message string) (model.FaultEvent,
 		Message:   strings.TrimSpace(message),
 		CreatedAt: time.Now().UTC(),
 	}
-	s.store.AddFaultEvent(event)
+
+	if err := s.store.AddFaultEvent(event); err != nil {
+		return model.FaultEvent{}, err
+	}
+
 	return event, nil
 }
 
@@ -60,30 +65,42 @@ func (s *Service) CheckHeartbeat(neID string, healthy bool) (model.HeartbeatStat
 	if !ok {
 		return model.HeartbeatStatus{}, errors.New("network element not found")
 	}
+
 	hb := model.HeartbeatStatus{
-		NEID:      neID,
+		NEID:      strings.TrimSpace(neID),
 		Healthy:   healthy,
 		CheckedAt: time.Now().UTC(),
 	}
-	s.store.SaveHeartbeat(hb)
+
+	if err := s.store.SaveHeartbeat(hb); err != nil {
+		return model.HeartbeatStatus{}, err
+	}
 
 	if !healthy {
-		s.store.AddFaultEvent(model.FaultEvent{
+		event := model.FaultEvent{
 			ID:        id.New("fault"),
-			NEID:      neID,
+			NEID:      strings.TrimSpace(neID),
 			Severity:  "major",
 			Message:   "heartbeat check failed",
 			CreatedAt: time.Now().UTC(),
-		})
+		}
+
+		if err := s.store.AddFaultEvent(event); err != nil {
+			return model.HeartbeatStatus{}, err
+		}
 	}
 
 	return hb, nil
 }
 
-func (s *Service) GetHeartbeat(neID string) (model.HeartbeatStatus, bool) {
-	return s.store.GetHeartbeat(neID)
+func (s *Service) GetHeartbeat(neID string) (model.HeartbeatStatus, bool, error) {
+	return s.store.GetHeartbeat(strings.TrimSpace(neID))
 }
 
-func (s *Service) ListEvents(neID string) []model.FaultEvent {
-	return s.store.ListFaultEvents(neID)
+func (s *Service) ListEvents(neID string, limit int) ([]model.FaultEvent, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	return s.store.ListFaultEvents(strings.TrimSpace(neID), limit)
 }

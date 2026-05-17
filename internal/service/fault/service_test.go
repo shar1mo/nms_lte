@@ -27,11 +27,19 @@ func TestReportEventSuccess(t *testing.T) {
 	}
 
 	if event.Severity != "critical" {
-		t.Fatalf("expected severity normalized to 'critical', got %s", event.Severity)
+		t.Fatalf("expected severity 'critical', got %s", event.Severity)
 	}
 
 	if event.Message != "link down" {
 		t.Fatalf("unexpected message: %s", event.Message)
+	}
+
+	if event.ID == "" {
+		t.Fatalf("expected event ID")
+	}
+
+	if event.CreatedAt.IsZero() {
+		t.Fatalf("expected CreatedAt")
 	}
 }
 
@@ -45,7 +53,11 @@ func TestReportEventValidationFail(t *testing.T) {
 	}
 
 	neService := ne.NewService(store)
-	neItem, _ := neService.Register("enb-2", "10.0.0.2", "vendor-b", nil)
+
+	neItem, err := neService.Register("enb-2", "10.0.0.2", "vendor-b", nil)
+	if err != nil {
+		t.Fatalf("register ne: %v", err)
+	}
 
 	_, err = faultService.ReportEvent(neItem.ID, "major", "   ")
 	if err == nil {
@@ -58,7 +70,10 @@ func TestCheckHeartbeatHealthy(t *testing.T) {
 	neService := ne.NewService(store)
 	faultService := NewService(store)
 
-	neItem, _ := neService.Register("enb-3", "10.0.0.3", "vendor-c", nil)
+	neItem, err := neService.Register("enb-3", "10.0.0.3", "vendor-c", nil)
+	if err != nil {
+		t.Fatalf("register ne: %v", err)
+	}
 
 	hb, err := faultService.CheckHeartbeat(neItem.ID, true)
 	if err != nil {
@@ -69,7 +84,19 @@ func TestCheckHeartbeatHealthy(t *testing.T) {
 		t.Fatalf("expected healthy=true")
 	}
 
-	events := faultService.ListEvents(neItem.ID)
+	if hb.NEID != neItem.ID {
+		t.Fatalf("expected NEID %s, got %s", neItem.ID, hb.NEID)
+	}
+
+	if hb.CheckedAt.IsZero() {
+		t.Fatalf("expected CheckedAt")
+	}
+
+	events, err := faultService.ListEvents(neItem.ID, 100)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+
 	if len(events) != 0 {
 		t.Fatalf("expected no fault events, got %d", len(events))
 	}
@@ -80,14 +107,21 @@ func TestCheckHeartbeatFailureCreatesEvent(t *testing.T) {
 	neService := ne.NewService(store)
 	faultService := NewService(store)
 
-	neItem, _ := neService.Register("enb-4", "10.0.0.4", "vendor-d", nil)
+	neItem, err := neService.Register("enb-4", "10.0.0.4", "vendor-d", nil)
+	if err != nil {
+		t.Fatalf("register ne: %v", err)
+	}
 
-	_, err := faultService.CheckHeartbeat(neItem.ID, false)
+	_, err = faultService.CheckHeartbeat(neItem.ID, false)
 	if err != nil {
 		t.Fatalf("check heartbeat: %v", err)
 	}
 
-	events := faultService.ListEvents(neItem.ID)
+	events, err := faultService.ListEvents(neItem.ID, 100)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+
 	if len(events) != 1 {
 		t.Fatalf("expected 1 fault event, got %d", len(events))
 	}
@@ -95,6 +129,7 @@ func TestCheckHeartbeatFailureCreatesEvent(t *testing.T) {
 	if events[0].Severity != "major" {
 		t.Fatalf("expected severity 'major', got %s", events[0].Severity)
 	}
+
 	if events[0].Message != "heartbeat check failed" {
 		t.Fatalf("unexpected message: %s", events[0].Message)
 	}
@@ -105,15 +140,54 @@ func TestGetHeartbeat(t *testing.T) {
 	neService := ne.NewService(store)
 	faultService := NewService(store)
 
-	neItem, _ := neService.Register("enb-5", "10.0.0.5", "vendor-e", nil)
+	neItem, err := neService.Register("enb-5", "10.0.0.5", "vendor-e", nil)
+	if err != nil {
+		t.Fatalf("register ne: %v", err)
+	}
 
-	_, _ = faultService.CheckHeartbeat(neItem.ID, true)
+	_, err = faultService.CheckHeartbeat(neItem.ID, true)
+	if err != nil {
+		t.Fatalf("check heartbeat: %v", err)
+	}
 
-	hb, ok := faultService.GetHeartbeat(neItem.ID)
+	hb, ok, err := faultService.GetHeartbeat(neItem.ID)
+	if err != nil {
+		t.Fatalf("get heartbeat: %v", err)
+	}
+
 	if !ok {
 		t.Fatalf("expected heartbeat to exist")
 	}
+
 	if hb.NEID != neItem.ID {
 		t.Fatalf("expected NEID %s, got %s", neItem.ID, hb.NEID)
+	}
+
+	if !hb.Healthy {
+		t.Fatalf("expected healthy=true")
+	}
+}
+
+func TestListEventsLimit(t *testing.T) {
+	store := memory.New()
+	neService := ne.NewService(store)
+	faultService := NewService(store)
+
+	neItem, err := neService.Register("enb-6", "10.0.0.6", "vendor-f", nil)
+	if err != nil {
+		t.Fatalf("register ne: %v", err)
+	}
+
+	_, _ = faultService.ReportEvent(neItem.ID, "minor", "event 1")
+	_, _ = faultService.ReportEvent(neItem.ID, "major", "event 2")
+	_, _ = faultService.ReportEvent(neItem.ID, "critical", "event 3")
+
+	events, err := faultService.ListEvents(neItem.ID, 2)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(events))
 	}
 }
